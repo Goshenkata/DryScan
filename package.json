@@ -1,0 +1,36 @@
+{
+  "name": "dryscan-monorepo",
+  "version": "0.1.0",
+  "description": "A Semantic Code Duplication & Reuse Analyzer",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "workspaces": [
+    "core",
+    "cli"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "clean": "npm run clean --workspaces",
+    "test": "npm run test --workspaces",
+    "dev": "npm run dev --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  },
+  "keywords": [
+    "code-analysis",
+    "duplication-detection",
+    "semantic-analysis",
+    "typescript",
+    "cli"
+  ],
+  "author": "Goshenkata",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Goshenkata/DryScan.git"
+  }
+}
