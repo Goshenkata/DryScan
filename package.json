@@ -17,8 +17,8 @@
     "dev": "npm run dev --workspaces"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
   },
   "keywords": [
     "code-analysis",
