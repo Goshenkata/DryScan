@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Tests: All Workspaces",
+      "runtimeExecutable": "/home/goshenkata/.nvm/versions/node/v22.17.1/bin/npm",
+      "runtimeArgs": [
+        "run",
+        "test",
+        "--workspaces"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Tests: Core Package",
+      "runtimeExecutable": "/home/goshenkata/.nvm/versions/node/v22.17.1/bin/npm",
+      "runtimeArgs": [
+        "run",
+        "-w",
+        "core",
+        "test"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

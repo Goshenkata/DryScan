@@ -1,0 +1,5 @@
+{
+  "extension": ["mjs"],
+  "spec": ["test/**/*.test.mjs"],
+  "ignore": ["test/resources/**/*"]
+}
