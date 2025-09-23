@@ -39,7 +39,7 @@ export class JavaScriptExtractor implements LanguageExtractor {
         functions.push({
           id: `${file}:${startLine}-${endLine}`,
           name,
-          file,
+          fullPath: file,
           startLine,
           endLine,
           code,

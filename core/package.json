@@ -29,6 +29,7 @@
   "author": "Goshenkata",
   "license": "MIT",
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.0.0",
     "chai": "^5.3.3",
     "mocha": "^10.8.2",

@@ -1,4 +1,5 @@
 public class Sample {
+  @SuppressWarnings("unused")
   private int value;
 
   public Sample() {

@@ -1,6 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
-import { FunctionInfo } from "./types";
+import upath from "upath";
+import crypto from "node:crypto";
+import { FunctionInfo, IndexUnit } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
 import { JavaScriptExtractor } from "./extractors/javascript";
 import { PythonExtractor } from "./extractors/python";
@@ -21,7 +23,7 @@ export class FunctionExtractor {
     this.extractors = extractors;
   }
 
-  async scan(targetPath: string): Promise<FunctionInfo[]> {
+  async scan(targetPath: string): Promise<IndexUnit[]> {
     const fullPath = path.isAbsolute(targetPath)
       ? targetPath
       : path.join(this.root, targetPath);
@@ -38,8 +40,8 @@ export class FunctionExtractor {
     return this.scanFile(fullPath);
   }
 
-  private async scanDirectory(dir: string): Promise<FunctionInfo[]> {
-    const out: FunctionInfo[] = [];
+  private async scanDirectory(dir: string): Promise<IndexUnit[]> {
+    const out: IndexUnit[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const child = path.join(dir, entry.name);
@@ -56,11 +58,11 @@ export class FunctionExtractor {
     return out;
   }
 
-  private async scanFile(filePath: string): Promise<FunctionInfo[]> {
+  private async scanFile(filePath: string): Promise<IndexUnit[]> {
     return this.tryScanSupportedFile(filePath, true);
   }
 
-  private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<FunctionInfo[]> {
+  private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<IndexUnit[]> {
     const extractor = this.extractors.find(ex => ex.supports(filePath));
     if (!extractor) {
       if (throwOnUnsupported) {
@@ -69,6 +71,29 @@ export class FunctionExtractor {
       return [];
     }
     const source = await fs.readFile(filePath, "utf8");
-    return extractor.extractFromText(filePath, source);
+    const fis = await extractor.extractFromText(filePath, source);
+    return fis.map(fi => {
+      const rel = this.relPath(fi.fullPath);
+      const id = `${rel}:${fi.startLine}-${fi.endLine}`;
+      const hash = this.hashCode(fi.code);
+      return {
+        id,
+        name: fi.name,
+        filePath: rel,
+        startLine: fi.startLine,
+        endLine: fi.endLine,
+        code: fi.code,
+        embedding: undefined,
+        hash,
+      };
+    });
+  }
+
+  private relPath(absPath: string): string {
+    return upath.normalizeTrim(upath.relative(this.root, absPath));
+  }
+
+  private hashCode(code: string): string {
+    return crypto.createHash("sha256").update(code).digest("hex");
   }
 }

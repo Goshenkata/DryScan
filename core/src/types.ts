@@ -5,13 +5,24 @@ export interface DuplicateGroup {
   codeSnippet: string;
 }
 
+
 export interface FunctionInfo {
   id: string;
   name: string;
-  file: string;
+  fullPath: string;
   startLine: number;
   endLine: number;
   code: string;
+}
+export interface IndexUnit {
+  id: string;
+  name: string;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  code: string;
+  embedding?: number[];
+  hash: string;
 }
 
 export interface EmbeddingResult {
