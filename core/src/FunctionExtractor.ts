@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import upath from "upath";
 import crypto from "node:crypto";
-import { FunctionInfo, IndexUnit } from "./types";
+import { FunctionInfo, FunctionInfo } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
 import { JavaScriptExtractor } from "./extractors/javascript";
 import { PythonExtractor } from "./extractors/python";
@@ -23,7 +23,7 @@ export class FunctionExtractor {
     this.extractors = extractors;
   }
 
-  async scan(targetPath: string): Promise<IndexUnit[]> {
+  async scan(targetPath: string): Promise<FunctionInfo[]> {
     const fullPath = path.isAbsolute(targetPath)
       ? targetPath
       : path.join(this.root, targetPath);
@@ -40,8 +40,8 @@ export class FunctionExtractor {
     return this.scanFile(fullPath);
   }
 
-  private async scanDirectory(dir: string): Promise<IndexUnit[]> {
-    const out: IndexUnit[] = [];
+  private async scanDirectory(dir: string): Promise<FunctionInfo[]> {
+    const out: FunctionInfo[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const child = path.join(dir, entry.name);
@@ -58,11 +58,11 @@ export class FunctionExtractor {
     return out;
   }
 
-  private async scanFile(filePath: string): Promise<IndexUnit[]> {
+  private async scanFile(filePath: string): Promise<FunctionInfo[]> {
     return this.tryScanSupportedFile(filePath, true);
   }
 
-  private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<IndexUnit[]> {
+  private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<FunctionInfo[]> {
     const extractor = this.extractors.find(ex => ex.supports(filePath));
     if (!extractor) {
       if (throwOnUnsupported) {

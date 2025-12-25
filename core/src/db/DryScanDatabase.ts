@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import upath from "upath";
 import Database from "better-sqlite3"; 
+import { FunctionInfo } from "../types";
 
 export class DryScanDatabase {
     async init(dbPath: string): Promise<void> {
@@ -21,7 +22,7 @@ export class DryScanDatabase {
     `);
     }
 
-    async updateIndexUnit(): Promise<void> {
+    async updateIndexUnit(functions: FunctionInfo[]): Promise<void> {
         // insert/update logic
     }
 }

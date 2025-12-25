@@ -1,20 +1,16 @@
 export interface DuplicateGroup {
   id: string;
-  functions: FunctionInfo[]; // Instead of files, group by functions
   similarity: number;
-  codeSnippet: string;
+  left: DuplicateSide;
+  right: DuplicateSide;
 }
 
+export interface DuplicateSide {
+  filePath: string;
+  snippet:string
+}
 
 export interface FunctionInfo {
-  id: string;
-  name: string;
-  fullPath: string;
-  startLine: number;
-  endLine: number;
-  code: string;
-}
-export interface IndexUnit {
   id: string;
   name: string;
   filePath: string;
