@@ -3,15 +3,15 @@
   "version": "0.1.0",
   "description": "CLI tool for DryScan - semantic code duplication analyzer",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/cli.js",
   "bin": {
-    "dryscan": "./dist/index.js"
+    "dryscan": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
-    "start": "node ./dist/index.js"
+    "start": "node ./dist/cli.js"
   },
   "engines": {
     "node": ">=18.0.0"

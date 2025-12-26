@@ -35,9 +35,6 @@ npx dryscan init <repo-path>
 # Update embeddings for semantic search
 npx dryscan update <repo-path>
 
-# Search code semantically
-npx dryscan search "function name" --repo <repo-path>
-
 # Find duplicate code patterns
 npx dryscan dupes <repo-path>
 ```
@@ -60,8 +57,6 @@ npx dryscan dupes ./src
 The `@dryscan/core` package exports the following async functions:
 
 - `analyzeRepo(repoPath: string)` - Analyzes repository structure and code
-- `updateEmbeddings(repoPath: string)` - Updates semantic embeddings
-- `searchQuery(query: string, repoPath?: string)` - Performs semantic code search
 - `findDuplicates(repoPath: string)` - Detects code duplication patterns
 
 ## Development

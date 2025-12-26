@@ -27,6 +27,51 @@
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug DryScan CLI: init",
+      "program": "${workspaceFolder}/cli/dist/cli.js",
+      "args": [
+        "init",
+        "./test-java-project"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "skipFiles": [
+        "<node_internals>/**",
+        "${workspaceFolder}/**/node_modules/**"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/cli/dist/**/*.js"
+      ],
+      "internalConsoleOptions": "neverOpen",
+      "preLaunchTask": "dryscan-clean",
+      "runtimeExecutable": "/home/goshenkata/.nvm/versions/node/v22.17.1/bin/node"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug DryScan CLI: dupes",
+      "program": "${workspaceFolder}/cli/dist/cli.js",
+      "args": [
+        "dupes",
+        "./test-java-project"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "skipFiles": [
+        "<node_internals>/**",
+        "${workspaceFolder}/**/node_modules/**"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/cli/dist/**/*.js"
+      ],
+      "internalConsoleOptions": "neverOpen",
+      "runtimeExecutable": "/home/goshenkata/.nvm/versions/node/v22.17.1/bin/node"
     }
   ]
 }

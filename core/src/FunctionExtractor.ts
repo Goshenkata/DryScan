@@ -2,16 +2,15 @@ import fs from "fs/promises";
 import path from "path";
 import upath from "upath";
 import crypto from "node:crypto";
-import { FunctionInfo, FunctionInfo } from "./types";
-import { LanguageExtractor } from "./extractors/LanguageExtractor";
-import { JavaScriptExtractor } from "./extractors/javascript";
-import { PythonExtractor } from "./extractors/python";
-import { JavaExtractor } from "./extractors/java";
+import { FunctionInfo } from "./types.js";
+import { LanguageExtractor } from "./extractors/LanguageExtractor.js";
+import { JavaScriptExtractor } from "./extractors/javascript.js";
+import { JavaExtractor } from "./extractors/java.js";
 
 export { LanguageExtractor } from "./extractors/LanguageExtractor";
 
 export function defaultExtractors(): LanguageExtractor[] {
-  return [new JavaScriptExtractor(), new PythonExtractor(), new JavaExtractor()];
+  return [new JavaScriptExtractor(), new JavaExtractor()];
 }
 
 export class FunctionExtractor {
@@ -38,6 +37,98 @@ export class FunctionExtractor {
     }
 
     return this.scanFile(fullPath);
+  }
+
+  /**
+   * Resolves and applies internal dependencies for a set of functions.
+   * This is the main entry point for Phase 2 of the analysis.
+   * 
+   * @param functions - Functions to process
+   * @param allFunctions - Complete function index for name lookup
+   * @returns Functions with internalFunctions populated
+   */
+  async applyInternalDependencies(functions: FunctionInfo[], allFunctions: FunctionInfo[]): Promise<FunctionInfo[]> {
+    const nameIndex = this.buildNameIndex(allFunctions);
+    return functions.map(fn => this.applyInternalDependenciesToFunction(fn, nameIndex));
+  }
+
+  /**
+   * Applies internal dependencies to a single function (partial operation).
+   * Extracts call expressions from the function's AST and resolves them to local functions.
+   */
+  private applyInternalDependenciesToFunction(fn: FunctionInfo, nameIndex: Map<string, FunctionInfo[]>): FunctionInfo {
+    const extractor = this.findExtractor(fn.filePath);
+    if (!extractor) return fn;
+
+    const callNames = extractor.extractCallsFromFunction(fn.filePath, fn.id);
+    const internalFunctions = this.resolveInternalCalls(callNames, nameIndex, fn.filePath);
+
+    return { ...fn, internalFunctions };
+  }
+
+  /**
+   * Resolves call names to actual local functions using the name index.
+   * Filters out library/external calls (not in index) and deduplicates.
+   */
+  private resolveInternalCalls(callNames: string[], nameIndex: Map<string, FunctionInfo[]>, currentFile: string): FunctionInfo[] {
+    const resolved: FunctionInfo[] = [];
+    const seen = new Set<string>();
+
+    for (const callName of callNames) {
+      const candidates = nameIndex.get(callName) || [];
+      const match = this.findBestMatch(candidates, currentFile);
+      if (match && !seen.has(match.id)) {
+        resolved.push(match);
+        seen.add(match.id);
+      }
+    }
+
+    return resolved;
+  }
+
+  /**
+   * Finds the best matching function from candidates.
+   * Prefers same-file matches to handle name collisions.
+   */
+  private findBestMatch(candidates: FunctionInfo[], currentFile: string): FunctionInfo | null {
+    if (candidates.length === 0) return null;
+    
+    // Prefer functions in the same file
+    const sameFile = candidates.find(c => c.filePath === currentFile);
+    if (sameFile) return sameFile;
+    
+    // Fallback to first candidate
+    return candidates[0];
+  }
+
+  /**
+   * Builds a name-based index for fast function lookup.
+   * Extracts simple names from qualified names (e.g., "Sample.helper" -> "helper").
+   */
+  private buildNameIndex(functions: FunctionInfo[]): Map<string, FunctionInfo[]> {
+    const index = new Map<string, FunctionInfo[]>();
+    
+    for (const fn of functions) {
+      const simpleName = this.extractSimpleName(fn.name);
+      const existing = index.get(simpleName) || [];
+      existing.push(fn);
+      index.set(simpleName, existing);
+    }
+    
+    return index;
+  }
+
+  /**
+   * Extracts the simple name from a qualified name.
+   * E.g., "Sample.helper" -> "helper", "helper" -> "helper"
+   */
+  private extractSimpleName(fullName: string): string {
+    const parts = fullName.split(".");
+    return parts[parts.length - 1];
+  }
+
+  private findExtractor(filePath: string): LanguageExtractor | undefined {
+    return this.extractors.find(ex => ex.supports(filePath));
   }
 
   private async scanDirectory(dir: string): Promise<FunctionInfo[]> {
@@ -73,7 +164,7 @@ export class FunctionExtractor {
     const source = await fs.readFile(filePath, "utf8");
     const fis = await extractor.extractFromText(filePath, source);
     return fis.map(fi => {
-      const rel = this.relPath(fi.fullPath);
+      const rel = this.relPath(fi.filePath);
       const id = `${rel}:${fi.startLine}-${fi.endLine}`;
       const hash = this.hashCode(fi.code);
       return {

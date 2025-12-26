@@ -1,28 +1,62 @@
+import "reflect-metadata";
 import fs from "fs/promises";
 import upath from "upath";
-import Database from "better-sqlite3"; 
-import { FunctionInfo } from "../types";
+import { DataSource, Repository } from "typeorm";
+import { FunctionEntity } from "./entities/FunctionEntity.js";
+import { FunctionInfo } from "../types.js";
 
 export class DryScanDatabase {
-    async init(dbPath: string): Promise<void> {
-        await fs.mkdir(upath.dirname(dbPath), { recursive: true });
-        const db = new Database(dbPath);
-        db.pragma("journal_mode = WAL");
-        db.exec(`
-      CREATE TABLE IF NOT EXISTS index_units (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        file_path TEXT NOT NULL,
-        start_line INTEGER NOT NULL,
-        end_line INTEGER NOT NULL,
-        code TEXT NOT NULL,
-        hash TEXT NOT NULL,
-        embedding BLOB
-      );
-    `);
-    }
+  private dataSource?: DataSource;
+  private functionRepository?: Repository<FunctionEntity>;
 
-    async updateIndexUnit(functions: FunctionInfo[]): Promise<void> {
-        // insert/update logic
+  async init(dbPath: string): Promise<void> {
+    await fs.mkdir(upath.dirname(dbPath), { recursive: true });
+
+    this.dataSource = new DataSource({
+      type: "better-sqlite3",
+      database: dbPath,
+      entities: [FunctionEntity],
+      synchronize: true,
+      logging: false,
+    });
+
+    await this.dataSource.initialize();
+    this.functionRepository = this.dataSource.getRepository(FunctionEntity);
+  }
+
+  async saveFunction(fn: FunctionInfo): Promise<void> {
+    if (!this.functionRepository) throw new Error("Database not initialized");
+    await this.functionRepository.save(fn);
+  }
+
+  async saveFunctions(functions: FunctionInfo[]): Promise<void> {
+    if (!this.functionRepository) throw new Error("Database not initialized");
+    await this.functionRepository.save(functions);
+  }
+
+  async getFunction(id: string): Promise<FunctionInfo | null> {
+    if (!this.functionRepository) throw new Error("Database not initialized");
+    return this.functionRepository.findOneBy({ id });
+  }
+
+  async getAllFunctions(): Promise<FunctionInfo[]> {
+    if (!this.functionRepository) throw new Error("Database not initialized");
+    return this.functionRepository.find();
+  }
+
+  async updateFunction(fn: FunctionInfo): Promise<void> {
+    if (!this.functionRepository) throw new Error("Database not initialized");
+    await this.functionRepository.save(fn);
+  }
+
+  async updateFunctions(functions: FunctionInfo[]): Promise<void> {
+    if (!this.functionRepository) throw new Error("Database not initialized");
+    await this.functionRepository.save(functions);
+  }
+
+  async close(): Promise<void> {
+    if (this.dataSource?.isInitialized) {
+      await this.dataSource.destroy();
     }
+  }
 }

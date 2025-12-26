@@ -1,9 +1,9 @@
 import upath from "upath";
 import fs from "fs/promises";
-import { DuplicateGroup, EmbeddingResult } from "./types";
-import { DRYSCAN_DIR, INDEX_DB } from "./const";
-import { defaultExtractors, FunctionExtractor } from "./FunctionExtractor";
-import { DryScanDatabase } from "./db/DryScanDatabase";
+import { DuplicateGroup, EmbeddingResult, FunctionInfo } from "./types.js";
+import { DRYSCAN_DIR, INDEX_DB } from "./const.js";
+import { defaultExtractors, FunctionExtractor } from "./FunctionExtractor.js";
+import { DryScanDatabase } from "./db/DryScanDatabase.js";
 export class DryScan {
   repoPath: string;
   private functionExtractor: FunctionExtractor;
@@ -19,24 +19,53 @@ export class DryScan {
     this.db = db ?? new DryScanDatabase();
   }
 
+  /**
+   * Initializes the DryScan repository with a 3-phase analysis:
+   * Phase 1: Extract and save all functions
+   * Phase 2: Resolve and save internal dependencies
+   * Phase 3: Compute and save semantic embeddings
+   */
   async init(): Promise<void> {
     if (await this.isInitialized()) return;
     const dbPath = upath.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
     await fs.mkdir(upath.dirname(dbPath), { recursive: true });
     await this.db.init(dbPath);
+
+    // Phase 1: Extract all functions without dependencies
+    await this.initFunctions();
+    // Phase 2: Resolve internal function calls
+    await this.applyDependencies();
+    // Phase 3: Generate embeddings for similarity detection
+    await this.computeEmbeddings();
+  }
+
+  /**
+   * Phase 1: Scans repository and extracts all functions.
+   * Saves functions to DB with internalFunctions undefined.
+   */
+  private async initFunctions(): Promise<void> {
+    const functions = await this.functionExtractor.scan(this.repoPath);
+    await this.db.saveFunctions(functions);
+  }
+
+  /**
+   * Phase 2: Resolves internal dependencies for all functions.
+   * Loads all functions, applies dependency resolution, and saves back.
+   */
+  private async applyDependencies(): Promise<void> {
+    const allFunctions = await this.db.getAllFunctions();
+    const updated = await this.functionExtractor.applyInternalDependencies(allFunctions, allFunctions);
+    await this.db.updateFunctions(updated);
+  }
+
+  /**
+   * Phase 3: Computes semantic embeddings for duplicate detection.
+   * TODO: Implement embedding computation
+   */
+  private async computeEmbeddings(): Promise<void> {
+    // TODO: Implement embedding computation
   }
   
-
-  async updateEmbeddings(): Promise<EmbeddingResult> {
-    await this.init();
-    console.log(`Updating embeddings for repository at: ${this.repoPath}`);
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    const functions: FunctionInfo[] = await this.functionExtractor.scan(this.repoPath);
-    await this.db.updateIndexUnit(functions);
-
-    return { errors: [], processed: 10, updated: 10 };
-  }
 
   async findDuplicates(): Promise<DuplicateGroup[]> {
     return [];

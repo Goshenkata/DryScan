@@ -1,8 +1,9 @@
-import { FunctionInfo } from "../types";
+import { FunctionInfo } from "../types.js";
 
 export interface LanguageExtractor {
   readonly id: string;
   readonly exts: string[];
   supports(filePath: string): boolean;
   extractFromText(filePath: string, source: string): Promise<FunctionInfo[]>;
+  extractCallsFromFunction(filePath: string, functionId: string): string[];
 }
