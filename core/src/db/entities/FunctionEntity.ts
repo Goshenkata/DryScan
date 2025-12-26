@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column } from "typeorm";
+import { Entity, PrimaryColumn, Column, ManyToMany, JoinTable } from "typeorm";
 import { FunctionInfo } from "../../types.js";
 
 @Entity("functions")
@@ -21,8 +21,13 @@ export class FunctionEntity implements FunctionInfo {
   @Column("text")
   code!: string;
 
-  @Column("simple-json", { nullable: true })
-  internalFunctions?: FunctionInfo[];
+  @ManyToMany(() => FunctionEntity, { nullable: true, cascade: false })
+  @JoinTable({
+    name: "function_dependencies",
+    joinColumn: { name: "function_id", referencedColumnName: "id" },
+    inverseJoinColumn: { name: "depends_on_id", referencedColumnName: "id" }
+  })
+  internalFunctions?: FunctionEntity[];
 
   @Column("simple-array", { nullable: true })
   embedding?: number[];

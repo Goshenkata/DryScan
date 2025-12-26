@@ -63,7 +63,17 @@ export class FunctionExtractor {
     const callNames = extractor.extractCallsFromFunction(fn.filePath, fn.id);
     const internalFunctions = this.resolveInternalCalls(callNames, nameIndex, fn.filePath);
 
-    return { ...fn, internalFunctions };
+    // Create lightweight references (only id is required for relation)
+    const functionRefs = internalFunctions.map(f => ({
+      id: f.id,
+      name: f.name,
+      filePath: f.filePath,
+      startLine: f.startLine,
+      endLine: f.endLine,
+      code: f.code
+    }));
+
+    return { ...fn, internalFunctions: functionRefs };
   }
 
   /**
@@ -165,7 +175,7 @@ export class FunctionExtractor {
     const rel = this.relPath(filePath);
     const fis = await extractor.extractFromText(rel, source);
     return fis.map(fi => {
-      const id = `${rel}:${fi.startLine}-${fi.endLine}`;
+      const id = `${fi.name}:${fi.startLine}-${fi.endLine}`;
       return {
         id,
         name: fi.name,

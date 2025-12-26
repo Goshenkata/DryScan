@@ -36,12 +36,15 @@ export class DryScanDatabase {
 
   async getFunction(id: string): Promise<FunctionInfo | null> {
     if (!this.functionRepository) throw new Error("Database not initialized");
-    return this.functionRepository.findOneBy({ id });
+    return this.functionRepository.findOne({ 
+      where: { id },
+      relations: ["internalFunctions"]
+    });
   }
 
   async getAllFunctions(): Promise<FunctionInfo[]> {
     if (!this.functionRepository) throw new Error("Database not initialized");
-    return this.functionRepository.find();
+    return this.functionRepository.find({ relations: ["internalFunctions"] });
   }
 
   async updateFunction(fn: FunctionInfo): Promise<void> {
