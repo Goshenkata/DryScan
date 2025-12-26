@@ -18,7 +18,7 @@ describe('JavaScriptExtractor - Call Extraction', () => {
 
   it('extracts function calls from callsHelper', async () => {
     await extractor.extractFromText(file, source);
-    const functionId = `${file}:5-8`;
+    const functionId = 'callsHelper:5-8';
     const calls = extractor.extractCallsFromFunction(file, functionId);
     
     expect(calls).to.include('helper');
@@ -26,7 +26,7 @@ describe('JavaScriptExtractor - Call Extraction', () => {
 
   it('extracts multiple function calls from callsMultiple', async () => {
     await extractor.extractFromText(file, source);
-    const functionId = `${file}:10-14`;
+    const functionId = 'callsMultiple:10-14';
     const calls = extractor.extractCallsFromFunction(file, functionId);
     
     expect(calls).to.include('helper');
@@ -35,7 +35,7 @@ describe('JavaScriptExtractor - Call Extraction', () => {
 
   it('extracts method calls correctly', async () => {
     await extractor.extractFromText(file, source);
-    const functionId = `${file}:21-25`;
+    const functionId = 'addAndLog:21-25';
     const calls = extractor.extractCallsFromFunction(file, functionId);
     
     expect(calls).to.include('add');

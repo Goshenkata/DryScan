@@ -18,7 +18,7 @@ describe('JavaExtractor - Call Extraction', () => {
 
   it('extracts method calls from callsHelper', async () => {
     await extractor.extractFromText(file, source);
-    const functionId = `${file}:7-9`;
+    const functionId = 'CallerSample.callsHelper:7-9';
     const calls = extractor.extractCallsFromFunction(file, functionId);
     
     expect(calls).to.include('helperMethod');
@@ -26,7 +26,7 @@ describe('JavaExtractor - Call Extraction', () => {
 
   it('extracts multiple method calls from callsMultiple', async () => {
     await extractor.extractFromText(file, source);
-    const functionId = `${file}:11-15`;
+    const functionId = 'CallerSample.callsMultiple:11-15';
     const calls = extractor.extractCallsFromFunction(file, functionId);
     
     expect(calls).to.include('helperMethod');
@@ -35,10 +35,10 @@ describe('JavaExtractor - Call Extraction', () => {
 
   it('returns empty array for method with no calls', async () => {
     await extractor.extractFromText(file, source);
-    const functionId = `${file}:17-19`;
+    const functionId = 'CallerSample.standalone:17-19';
     const calls = extractor.extractCallsFromFunction(file, functionId);
     
-    // println is actually a library call, not a local call
+    // println is actually a library call, extracted from method call
     expect(calls).to.include('println');
   });
 

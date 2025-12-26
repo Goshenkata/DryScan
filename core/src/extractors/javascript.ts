@@ -48,7 +48,7 @@ export class JavaScriptExtractor implements LanguageExtractor {
         const startLine = startPosition.row + 1;
         const endLine = endPosition.row + 1;
         const code = source.slice(node.startIndex, node.endIndex);
-        const id = `${file}:${startLine}-${endLine}`;
+        const id = `${name}:${startLine}-${endLine}`;
         
         functions.push({
           id,
