@@ -1,2 +1,2 @@
-export { DryScan } from './DryScan.js';
-export * from './types.js';
+export { DryScan } from './DryScan';
+export * from './types';

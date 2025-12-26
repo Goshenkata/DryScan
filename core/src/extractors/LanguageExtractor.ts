@@ -1,4 +1,4 @@
-import { FunctionInfo } from "../types.js";
+import { FunctionInfo } from "../types";
 
 export interface LanguageExtractor {
   readonly id: string;

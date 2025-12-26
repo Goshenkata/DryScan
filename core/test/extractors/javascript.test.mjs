@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import path from 'path';
 import fs from 'fs/promises';
-import { JavaScriptExtractor } from '../../dist/extractors/javascript.js';
+import { JavaScriptExtractor } from '../../dist/extractors/javascript';
 
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 

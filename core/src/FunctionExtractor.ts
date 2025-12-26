@@ -2,10 +2,10 @@ import fs from "fs/promises";
 import path from "path";
 import upath from "upath";
 import crypto from "node:crypto";
-import { FunctionInfo } from "./types.js";
-import { LanguageExtractor } from "./extractors/LanguageExtractor.js";
-import { JavaScriptExtractor } from "./extractors/javascript.js";
-import { JavaExtractor } from "./extractors/java.js";
+import { FunctionInfo } from "./types";
+import { LanguageExtractor } from "./extractors/LanguageExtractor";
+import { JavaScriptExtractor } from "./extractors/javascript";
+import { JavaExtractor } from "./extractors/java";
 
 export { LanguageExtractor } from "./extractors/LanguageExtractor";
 

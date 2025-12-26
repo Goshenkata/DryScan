@@ -12,7 +12,10 @@
         "--workspaces"
       ],
       "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "env": {
+        "DEBUG": "DryScan*"
+      }
     },
     {
       "type": "node",
@@ -26,7 +29,10 @@
         "test"
       ],
       "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "env": {
+        "DEBUG": "DryScan*"
+      }
     },
     {
       "type": "node",
@@ -46,7 +52,10 @@
         "${workspaceFolder}/**/node_modules/**"
       ],
       "internalConsoleOptions": "neverOpen",
-      "preLaunchTask": "dryscan-clean-build"
+      "preLaunchTask": "dryscan-clean-build",
+      "env": {
+        "DEBUG": "DryScan*"
+      }
     },
     {
       "type": "node",
@@ -66,7 +75,10 @@
         "${workspaceFolder}/**/node_modules/**"
       ],
       "internalConsoleOptions": "neverOpen",
-      "preLaunchTask": "dryscan-clean"
+      "preLaunchTask": "dryscan-clean",
+      "env": {
+        "DEBUG": "DryScan*"
+      }
     }
   ]
 }

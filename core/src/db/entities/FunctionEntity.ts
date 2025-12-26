@@ -1,5 +1,5 @@
 import { Entity, PrimaryColumn, Column, ManyToMany, JoinTable } from "typeorm";
-import { FunctionInfo } from "../../types.js";
+import { FunctionInfo } from "../../types";
 
 @Entity("functions")
 export class FunctionEntity implements FunctionInfo {

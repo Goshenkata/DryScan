@@ -2,7 +2,7 @@ import Parser from "tree-sitter";
 // @ts-ignore - old cjs typings
 import JavaScript from "tree-sitter-javascript";
 import { FunctionInfo } from "../types";
-import { LanguageExtractor } from "./LanguageExtractor.js";
+import { LanguageExtractor } from "./LanguageExtractor";
 
 /**
  * Cached parse result to avoid re-parsing during call extraction.

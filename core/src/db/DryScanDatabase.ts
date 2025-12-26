@@ -2,8 +2,8 @@ import "reflect-metadata";
 import fs from "fs/promises";
 import upath from "upath";
 import { DataSource, Repository } from "typeorm";
-import { FunctionEntity } from "./entities/FunctionEntity.js";
-import { FunctionInfo } from "../types.js";
+import { FunctionEntity } from "./entities/FunctionEntity";
+import { FunctionInfo } from "../types";
 
 export class DryScanDatabase {
   private dataSource?: DataSource;
