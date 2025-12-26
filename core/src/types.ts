@@ -19,7 +19,6 @@ export interface FunctionInfo {
   code: string;
   internalFunctions?: FunctionInfo[];
   embedding?: number[];
-  hash?: string;
 }
 
 export interface EmbeddingResult {

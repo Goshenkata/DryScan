@@ -162,11 +162,10 @@ export class FunctionExtractor {
       return [];
     }
     const source = await fs.readFile(filePath, "utf8");
-    const fis = await extractor.extractFromText(filePath, source);
+    const rel = this.relPath(filePath);
+    const fis = await extractor.extractFromText(rel, source);
     return fis.map(fi => {
-      const rel = this.relPath(fi.filePath);
       const id = `${rel}:${fi.startLine}-${fi.endLine}`;
-      const hash = this.hashCode(fi.code);
       return {
         id,
         name: fi.name,
@@ -175,7 +174,6 @@ export class FunctionExtractor {
         endLine: fi.endLine,
         code: fi.code,
         embedding: undefined,
-        hash,
       };
     });
   }
@@ -184,7 +182,4 @@ export class FunctionExtractor {
     return upath.normalizeTrim(upath.relative(this.root, absPath));
   }
 
-  private hashCode(code: string): string {
-    return crypto.createHash("sha256").update(code).digest("hex");
-  }
 }

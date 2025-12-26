@@ -2,10 +2,32 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "dryscan-clean-build",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "dryscan-clean",
+        "build"
+      ],
+      "problemMatcher": []
+    }
+    {
       "label": "dryscan-clean",
       "type": "shell",
       "command": "rm",
-      "args": ["-rf", "./test-java-project/.dry"],
+      "args": [
+        "-rf",
+        "./test-java-project/.dry"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "build"
+      ],
       "problemMatcher": []
     }
   ]

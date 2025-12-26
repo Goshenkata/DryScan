@@ -56,8 +56,7 @@ export class JavaScriptExtractor implements LanguageExtractor {
           filePath: file,
           startLine,
           endLine,
-          code,
-          hash: undefined
+          code
         });
         
         functionNodes.set(id, node);
