@@ -11,7 +11,9 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
-    "start": "node ./dist/cli.js"
+    "start": "node ./dist/cli.js",
+    "test": "echo \"No tests for CLI yet\"",
+    "coverage": "echo \"No coverage for CLI yet\""
   },
   "engines": {
     "node": ">=18.0.0"
