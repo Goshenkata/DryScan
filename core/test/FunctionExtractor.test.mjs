@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { FunctionExtractor } from '../dist/FunctionExtractor';
+import { FunctionExtractor } from '../dist/index.js';
 
 describe('FunctionExtractor - Internal Dependencies', () => {
   

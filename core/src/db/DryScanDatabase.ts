@@ -9,6 +9,10 @@ export class DryScanDatabase {
   private dataSource?: DataSource;
   private functionRepository?: Repository<FunctionEntity>;
 
+  isInitialized(): boolean {
+    return !!this.dataSource?.isInitialized;
+  }
+
   async init(dbPath: string): Promise<void> {
     await fs.mkdir(upath.dirname(dbPath), { recursive: true });
 

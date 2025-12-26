@@ -65,7 +65,7 @@
       "program": "${workspaceFolder}/cli/src/cli.ts",
       "args": [
         "dupes",
-        "./test-java-project"
+        "./test-java-project",
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -75,7 +75,7 @@
         "${workspaceFolder}/**/node_modules/**"
       ],
       "internalConsoleOptions": "neverOpen",
-      "preLaunchTask": "dryscan-clean",
+      "preLaunchTask": "build",
       "env": {
         "DEBUG": "DryScan*"
       }

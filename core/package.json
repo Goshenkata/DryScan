@@ -12,11 +12,12 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --outDir dist",
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build",
-    "test": "npm run build && mocha \"test/**/*.test.mjs\""
+    "test": "npm run build && mocha \"test/**/*.test.mjs\"",
+    "coverage": "npm run build && c8 mocha \"test/**/*.test.mjs\""
   },
   "engines": {
     "node": ">=18.0.0"
@@ -35,6 +36,7 @@
     "chai": "^5.3.3",
     "mocha": "^10.8.2",
     "sinon": "^17.0.1",
+    "tsup": "^8.5.1",
     "typescript": "^5.3.0"
   },
   "dependencies": {

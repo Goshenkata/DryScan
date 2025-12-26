@@ -7,7 +7,9 @@ export interface DuplicateGroup {
 
 export interface DuplicateSide {
   filePath: string;
-  snippet:string
+  startLine: number;
+  endLine: number;
+  code: string;
 }
 
 export interface FunctionInfo {

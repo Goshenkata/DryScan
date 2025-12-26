@@ -12,7 +12,7 @@
 **3-Phase Analysis Process:**
 1. **Initial Scan** (`initFunctions`): Parse all source files using Tree-sitter, extract function definitions, and save to SQLite via TypeORM (without dependencies).
 2. **Dependency Resolution** (`applyDependencies`): For each function, extract call expressions from its AST, match them against the function index by name, and populate `internalFunctions` array with references to called local functions.
-3. **Embedding** (`computeEmbeddings`): Generate semantic embeddings for duplicate detection.
+3. **Embedding** (`computeEmbeddings`): Generate semantic embeddings for duplicate detection using Ollama with the embeddinggemma model.
 
 **Key Design Decisions:**
 - Tree-sitter parses once per file; AST nodes cached in extractors to avoid re-parsing during call extraction.

@@ -102,10 +102,85 @@ export class DryScan {
   }
   
 
-  async findDuplicates(): Promise<DuplicateGroup[]> {
-    log("Finding duplicates...");
-    // ...actual logic here
-    return [];
+  /**
+   * Finds duplicate code blocks using cosine similarity on embeddings.
+   * Compares all function pairs and returns groups with similarity above threshold.
+   * 
+   * @param threshold - Minimum similarity score (0-1) to consider functions as duplicates. Default: 0.85
+   * @returns Array of duplicate groups with similarity scores
+   */
+  async findDuplicates(threshold: number = 0.85): Promise<DuplicateGroup[]> {
+    log("Finding duplicates with threshold", threshold);
+    
+    // Initialize database if needed
+    if (!this.db.isInitialized()) {
+      const dbPath = upath.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
+      await this.db.init(dbPath);
+    }
+    
+    const allFunctions = await this.db.getAllFunctions();
+    const functionsWithEmbeddings = allFunctions.filter(fn => fn.embedding && fn.embedding.length > 0);
+    
+    log(`Comparing ${functionsWithEmbeddings.length} functions with embeddings`);
+    
+    if (functionsWithEmbeddings.length < 2) {
+      log("Not enough functions with embeddings to compare");
+      return [];
+    }
+    
+    const duplicates = this.computeDuplicates(functionsWithEmbeddings, threshold);
+    log(`Found ${duplicates.length} duplicate groups`);
+    
+    return duplicates;
+  }
+
+  /**
+   * Computes duplicate groups by comparing all function pairs using cosine similarity.
+   * Only compares each pair once (i < j) to avoid redundant comparisons.
+   * 
+   * @param functions - Functions with embeddings to compare
+   * @param threshold - Minimum similarity score to consider as duplicate
+   * @returns Sorted array of duplicate groups (highest similarity first)
+   */
+  private computeDuplicates(functions: FunctionInfo[], threshold: number): DuplicateGroup[] {
+    const duplicates: DuplicateGroup[] = [];
+    
+    // Compare each pair of functions
+    for (let i = 0; i < functions.length; i++) {
+      for (let j = i + 1; j < functions.length; j++) {
+        const fn1 = functions[i];
+        const fn2 = functions[j];
+        
+        // Skip if either function lacks embedding
+        if (!fn1.embedding || !fn2.embedding) continue;
+        
+        // Compute cosine similarity between embeddings
+        const similarity = cosineSimilarity([fn1.embedding], [fn2.embedding])[0][0];
+        
+        // Add to duplicates if similarity exceeds threshold
+        if (similarity >= threshold) {
+          duplicates.push({
+            id: `${fn1.id}::${fn2.id}`,
+            similarity,
+            left: {
+              filePath: fn1.filePath,
+              startLine: fn1.startLine,
+              endLine: fn1.endLine,
+              code: fn1.code
+            },
+            right: {
+              filePath: fn2.filePath,
+              startLine: fn2.startLine,
+              endLine: fn2.endLine,
+              code: fn2.code
+            }
+          });
+        }
+      }
+    }
+    
+    // Sort by similarity (highest first)
+    return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
 
   private async isInitialized(): Promise<boolean> {
