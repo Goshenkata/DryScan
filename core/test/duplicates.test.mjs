@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import sinon from "sinon";
 import { DryScan } from "../dist/index.js";
 import upath from "upath";
 import fs from "fs/promises";
@@ -7,6 +8,19 @@ import os from "os";
 describe("DryScan - Duplicate Detection", () => {
   let testDir;
   let dryScan;
+
+  // Helper to create a DryScan instance with a stubbed DB
+  function createDryScanWithStubbedDB(testDir, dbOverrides = {}) {
+    const baseDb = {
+      isInitialized: () => false,
+      init: async () => {},
+      getAllFunctions: async () => [],
+      saveFunctions: async () => {},
+      updateFunctions: async () => {},
+      saveFiles: async () => {},
+    };
+    return new DryScan(testDir, undefined, { ...baseDb, ...dbOverrides });
+  }
 
   beforeEach(async () => {
     // Create a temporary directory for each test
@@ -36,6 +50,19 @@ describe("DryScan - Duplicate Detection", () => {
       expect(duplicates).to.be.an("array").that.is.empty;
     });
 
+      it("throws if updateIndex fails", async () => {
+        // Simulate updateIndex throwing
+        const error = new Error("updateIndex failed");
+        const stubbed = createDryScanWithStubbedDB(testDir);
+        stubbed.updateIndex = async () => { throw error; };
+        try {
+          await stubbed.findDuplicates();
+          throw new Error("Should have thrown");
+        } catch (err) {
+          expect(err.message).to.include("updateIndex failed");
+        }
+      });
+
     it("returns empty array when no duplicates exceed threshold", async () => {
       // Create two very different functions
       const testFile = upath.join(testDir, "test.js");
@@ -54,6 +81,63 @@ function greet(name) { return "Hello, " + name; }
       const duplicates = await dryScan.findDuplicates(0.99);
       expect(duplicates).to.be.an("array").that.is.empty;
     });
+
+      describe("DryScan error handling and edge cases", () => {
+        it("throws and logs if initFunctions fails", async () => {
+          const error = new Error("initFunctions fail");
+          const stubbed = createDryScanWithStubbedDB(testDir);
+          stubbed.initFunctions = async () => { throw error; };
+          try {
+            await stubbed.init();
+            throw new Error("Should have thrown");
+          } catch (err) {
+            expect(err.message).to.include("initFunctions fail");
+          }
+        });
+
+        it("throws and logs if applyDependencies fails", async () => {
+          const error = new Error("applyDependencies fail");
+          const stubbed = createDryScanWithStubbedDB(testDir);
+          stubbed.initFunctions = async () => {};
+          stubbed.applyDependencies = async () => { throw error; };
+          try {
+            await stubbed.init();
+            throw new Error("Should have thrown");
+          } catch (err) {
+            expect(err.message).to.include("applyDependencies fail");
+          }
+        });
+
+        it("throws and logs if computeEmbeddings fails", async () => {
+          const error = new Error("computeEmbeddings fail");
+          const stubbed = createDryScanWithStubbedDB(testDir);
+          stubbed.initFunctions = async () => {};
+          stubbed.applyDependencies = async () => {};
+          stubbed.computeEmbeddings = async () => { throw error; };
+          try {
+            await stubbed.init();
+            throw new Error("Should have thrown");
+          } catch (err) {
+            expect(err.message).to.include("computeEmbeddings fail");
+          }
+        });
+
+        it("throws and logs if trackFiles fails", async () => {
+          const error = new Error("trackFiles fail");
+          const stubbed = createDryScanWithStubbedDB(testDir);
+          stubbed.initFunctions = async () => {};
+          stubbed.applyDependencies = async () => {};
+          stubbed.computeEmbeddings = async () => {};
+          stubbed.trackFiles = async () => { throw error; };
+          try {
+            await stubbed.init();
+            throw new Error("Should have thrown");
+          } catch (err) {
+            expect(err.message).to.include("trackFiles fail");
+          }
+        });
+
+      });
 
     it("detects identical functions as duplicates", async () => {
       // Create identical functions

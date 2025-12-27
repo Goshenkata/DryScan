@@ -2,6 +2,48 @@ import { expect } from 'chai';
 import { FunctionExtractor } from '../dist/index.js';
 
 describe('FunctionExtractor - Internal Dependencies', () => {
+  describe('Error handling and edge cases', () => {
+    it('throws if listSourceFiles path does not exist', async () => {
+      const extractor = new FunctionExtractor('/fake/root');
+      try {
+        await extractor.listSourceFiles('missing.js');
+        throw new Error('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.include('Path not found');
+      }
+    });
+
+    it('throws if scan path does not exist', async () => {
+      const extractor = new FunctionExtractor('/fake/root');
+      try {
+        await extractor.scan('missing.js');
+        throw new Error('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.include('Path not found');
+      }
+    });
+
+    it('returns empty array if tryScanSupportedFile is called with unsupported file and throwOnUnsupported=false', async () => {
+      const extractor = new FunctionExtractor('/fake/root');
+      // Patch getExtractorForFile to return undefined
+      extractor.getExtractorForFile = () => undefined;
+      const result = await extractor.tryScanSupportedFile('unsupported.xyz', false);
+      expect(result).to.be.an('array').that.is.empty;
+    });
+
+    it('throws if tryScanSupportedFile is called with unsupported file and throwOnUnsupported=true', async () => {
+      const extractor = new FunctionExtractor('/fake/root');
+      extractor.getExtractorForFile = () => undefined;
+      try {
+        await extractor.tryScanSupportedFile('unsupported.xyz', true);
+        throw new Error('Should have thrown');
+      } catch (err) {
+        expect(err.message).to.include('Unsupported file type');
+      }
+    });
+
+    // findBestFunctionMatch is private/internal, skip direct test
+  });
   
   describe('applyInternalDependencies', () => {
     it('resolves simple function calls', async () => {

@@ -6,6 +6,19 @@ import { JavaExtractor } from '../../dist/index.js';
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 
 describe('JavaExtractor', () => {
+  describe('Error handling and edge cases', () => {
+    it('returns empty array if extractFromText is called with empty source', async () => {
+      const extractor = new JavaExtractor();
+      const results = await extractor.extractFromText('Empty.java', '');
+      expect(results).to.be.an('array').that.is.empty;
+    });
+
+    it('returns empty array if extractCallsFromFunction is called before extractFromText', () => {
+      const extractor = new JavaExtractor();
+      const calls = extractor.extractCallsFromFunction('SomeFile.java', 'id');
+      expect(calls).to.be.an('array').that.is.empty;
+    });
+  });
   it('supports only .java', () => {
     const ex = new JavaExtractor();
     expect(ex.supports('Main.java')).to.equal(true);
