@@ -1,12 +1,14 @@
 import upath from "upath";
 import fs from "fs/promises";
+import path from "path";
 import debug from "debug";
 import { DuplicateGroup, EmbeddingResult, FunctionInfo } from "./types";
 import { DRYSCAN_DIR, INDEX_DB } from "./const";
 import { defaultExtractors, FunctionExtractor } from "./FunctionExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
-import { OllamaEmbeddings } from "@langchain/ollama";
+import { FileEntity } from "./db/entities/FileEntity";
 import { cosineSimilarity } from "@langchain/core/utils/math";
+import { performIncrementalUpdate, addEmbedding } from "./DryScanUpdater";
 
 const log = debug("DryScan");
 
@@ -47,7 +49,41 @@ export class DryScan {
     await this.applyDependencies();
     log("Phase 3: Computing embeddings...");
     await this.computeEmbeddings();
+    log("Phase 4: Tracking files...");
+    await this.trackFiles();
     log("DryScan initialization complete.");
+  }
+
+  /**
+   * Updates the index by detecting changed, new, and deleted files.
+   * Only reprocesses functions in changed files for efficiency.
+   * Delegates to DryScanUpdater module for implementation.
+   * 
+   * Update process:
+   * 1. List all current source files in repository
+   * 2. For each file, check if it's new, changed, or unchanged (via mtime + checksum)
+   * 3. Remove old functions from changed/deleted files
+   * 4. Extract and save functions from new/changed files
+   * 5. Recompute internal dependencies for affected functions
+   * 6. Recompute embeddings for affected functions
+   * 7. Update file tracking metadata
+   */
+  async updateIndex(): Promise<void> {
+    log("Updating DryScan index at", this.repoPath);
+    
+    // Ensure DB is initialized
+    if (!this.db.isInitialized()) {
+      const dbPath = upath.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
+      await this.db.init(dbPath);
+    }
+
+    try {
+      await performIncrementalUpdate(this.repoPath, this.functionExtractor, this.db);
+      log("Index update complete.");
+    } catch (err) {
+      log("Error during index update:", err);
+      throw err;
+    }
   }
 
   /**
@@ -85,8 +121,6 @@ export class DryScan {
 
   /**
    * Phase 3: Computes semantic embeddings for duplicate detection.
-   * 
-   * TODO: Implement embedding computation
    */
   private async computeEmbeddings(): Promise<void> {
     try {
@@ -97,6 +131,36 @@ export class DryScan {
       log("Embeddings computed and saved.");
     } catch (err) {
       log("Error during embedding computation:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Phase 4: Tracks all source files with checksums and mtime.
+   * Enables efficient change detection in future updates.
+   */
+  private async trackFiles(): Promise<void> {
+    try {
+      const allFiles = await this.functionExtractor.listSourceFiles(this.repoPath);
+      const fileEntities: FileEntity[] = [];
+      
+      for (const relPath of allFiles) {
+        const fullPath = path.join(this.repoPath, relPath);
+        const stat = await fs.stat(fullPath);
+        const checksum = await this.functionExtractor.computeChecksum(fullPath);
+        
+        const fileEntity = new FileEntity();
+        fileEntity.filePath = relPath;
+        fileEntity.checksum = checksum;
+        fileEntity.mtime = stat.mtimeMs;
+        
+        fileEntities.push(fileEntity);
+      }
+      
+      await this.db.saveFiles(fileEntities);
+      log(`Tracked ${fileEntities.length} files.`);
+    } catch (err) {
+      log("Error during file tracking:", err);
       throw err;
     }
   }
@@ -198,14 +262,4 @@ export class DryScan {
       throw err;
     }
   }
-}
-
-async function addEmbedding(fn: FunctionInfo): Promise<any> {
-const embeddings = new OllamaEmbeddings({
-  model: "embeddinggemma",
-  baseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
-});
-const embedding = await embeddings.embedQuery(fn.code);
-fn.embedding = embedding;
-return fn;
 }

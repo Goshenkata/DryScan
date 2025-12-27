@@ -1,0 +1,244 @@
+import path from "path";
+import fs from "fs/promises";
+import debug from "debug";
+import { FunctionInfo } from "./types";
+import { FunctionExtractor } from "./FunctionExtractor";
+import { DryScanDatabase } from "./db/DryScanDatabase";
+import { FileEntity } from "./db/entities/FileEntity";
+import { OllamaEmbeddings } from "@langchain/ollama";
+
+const log = debug("DryScan:Updater");
+
+/**
+ * DryScan Updater Module
+ * 
+ * This module contains all incremental update logic for DryScan.
+ * Separated from DryScan.ts to keep that file focused on core operations.
+ * 
+ * Responsibilities:
+ * - File change detection (added, modified, deleted)
+ * - Incremental function extraction
+ * - File tracking metadata management
+ * - Semantic embedding computation
+ * - Orchestrating the complete update workflow
+ */
+
+/**
+ * Represents the result of change detection.
+ * Categorizes files into added, changed, deleted, and unchanged.
+ */
+export interface FileChangeSet {
+  added: string[];
+  changed: string[];
+  deleted: string[];
+  unchanged: string[];
+}
+
+/**
+ * Detects which files have been added, changed, or deleted since last scan.
+ * Uses mtime as fast check, then checksum for verification.
+ * 
+ * @param repoPath - Root path of the repository
+ * @param functionExtractor - Function extractor instance for file operations
+ * @param db - Database instance for retrieving tracked files
+ * @returns Change set with categorized file paths
+ */
+export async function detectFileChanges(
+  repoPath: string,
+  functionExtractor: FunctionExtractor,
+  db: DryScanDatabase
+): Promise<FileChangeSet> {
+  // Get current files in repository
+  const currentFiles = await functionExtractor.listSourceFiles(repoPath);
+  const currentFileSet = new Set(currentFiles);
+
+  // Get tracked files from database
+  const trackedFiles = await db.getAllFiles();
+  const trackedFileMap = new Map(trackedFiles.map(f => [f.filePath, f]));
+
+  const added: string[] = [];
+  const changed: string[] = [];
+  const unchanged: string[] = [];
+
+  // Check each current file
+  for (const filePath of currentFiles) {
+    const tracked = trackedFileMap.get(filePath);
+    
+    if (!tracked) {
+      // New file
+      added.push(filePath);
+      continue;
+    }
+
+    // Check if file changed using mtime first (fast check)
+    const fullPath = path.join(repoPath, filePath);
+    const stat = await fs.stat(fullPath);
+    
+    if (stat.mtimeMs !== tracked.mtime) {
+      // Mtime changed, verify with checksum
+      const currentChecksum = await functionExtractor.computeChecksum(fullPath);
+      if (currentChecksum !== tracked.checksum) {
+        changed.push(filePath);
+      } else {
+        // Mtime changed but content same (e.g., touch command)
+        unchanged.push(filePath);
+      }
+    } else {
+      unchanged.push(filePath);
+    }
+  }
+
+  // Find deleted files
+  const deleted = trackedFiles
+    .map(f => f.filePath)
+    .filter(fp => !currentFileSet.has(fp));
+
+  return { added, changed, deleted, unchanged };
+}
+
+/**
+ * Extracts functions from a list of files.
+ * Used during incremental updates.
+ * 
+ * @param filePaths - Array of relative file paths to extract from
+ * @param functionExtractor - Function extractor instance
+ * @returns Array of extracted functions
+ */
+export async function extractFunctionsFromFiles(
+  filePaths: string[],
+  functionExtractor: FunctionExtractor
+): Promise<FunctionInfo[]> {
+  const allFunctions: FunctionInfo[] = [];
+  
+  for (const relPath of filePaths) {
+    const functions = await functionExtractor.scan(relPath);
+    allFunctions.push(...functions);
+  }
+  
+  return allFunctions;
+}
+
+/**
+ * Updates file tracking metadata after processing changes.
+ * Removes deleted files, updates changed files, adds new files.
+ * 
+ * @param changeSet - Set of file changes to apply
+ * @param repoPath - Root path of the repository
+ * @param functionExtractor - Function extractor for checksum computation
+ * @param db - Database instance for file tracking
+ */
+export async function updateFileTracking(
+  changeSet: FileChangeSet,
+  repoPath: string,
+  functionExtractor: FunctionExtractor,
+  db: DryScanDatabase
+): Promise<void> {
+  // Remove deleted files
+  if (changeSet.deleted.length > 0) {
+    await db.removeFilesByFilePaths(changeSet.deleted);
+  }
+
+  // Create file entities for new and changed files
+  const filesToTrack = [...changeSet.added, ...changeSet.changed];
+  if (filesToTrack.length > 0) {
+    const fileEntities: FileEntity[] = [];
+    
+    for (const relPath of filesToTrack) {
+      const fullPath = path.join(repoPath, relPath);
+      const stat = await fs.stat(fullPath);
+      const checksum = await functionExtractor.computeChecksum(fullPath);
+      
+      const fileEntity = new FileEntity();
+      fileEntity.filePath = relPath;
+      fileEntity.checksum = checksum;
+      fileEntity.mtime = stat.mtimeMs;
+      
+      fileEntities.push(fileEntity);
+    }
+    
+    await db.saveFiles(fileEntities);
+  }
+}
+
+/**
+ * Computes semantic embedding for a single function.
+ * Uses Ollama with embeddinggemma model.
+ * 
+ * @param fn - Function to compute embedding for
+ * @returns Function with embedding populated
+ */
+export async function addEmbedding(fn: FunctionInfo): Promise<FunctionInfo> {
+  const embeddings = new OllamaEmbeddings({
+    model: "embeddinggemma",
+    baseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
+  });
+  const embedding = await embeddings.embedQuery(fn.code);
+  fn.embedding = embedding;
+  return fn;
+}
+
+/**
+ * Performs incremental update of the DryScan index.
+ * Detects file changes and reprocesses only affected files.
+ * 
+ * @param repoPath - Root path of the repository
+ * @param functionExtractor - Function extractor instance
+ * @param db - Database instance (must be initialized)
+ */
+export async function performIncrementalUpdate(
+  repoPath: string,
+  functionExtractor: FunctionExtractor,
+  db: DryScanDatabase
+): Promise<void> {
+  log("Starting incremental update");
+  
+  // Step 1: Detect changes
+  const changeSet = await detectFileChanges(repoPath, functionExtractor, db);
+  
+  if (changeSet.changed.length === 0 && 
+      changeSet.added.length === 0 && 
+      changeSet.deleted.length === 0) {
+    log("No changes detected. Index is up to date.");
+    return;
+  }
+
+  log(`Changes detected: ${changeSet.added.length} added, ${changeSet.changed.length} changed, ${changeSet.deleted.length} deleted`);
+
+  // Step 2: Remove old data for changed/deleted files
+  const filesToRemove = [...changeSet.changed, ...changeSet.deleted];
+  if (filesToRemove.length > 0) {
+    await db.removeFunctionsByFilePaths(filesToRemove);
+    log(`Removed functions from ${filesToRemove.length} files`);
+  }
+
+  // Step 3: Extract functions from new/changed files
+  const filesToProcess = [...changeSet.added, ...changeSet.changed];
+  if (filesToProcess.length > 0) {
+    const newFunctions = await extractFunctionsFromFiles(filesToProcess, functionExtractor);
+    await db.saveFunctions(newFunctions);
+    log(`Extracted and saved ${newFunctions.length} functions from ${filesToProcess.length} files`);
+
+    // Step 4: Recompute dependencies for affected functions only
+    const allFunctions = await db.getAllFunctions();
+    const affectedFunctions = allFunctions.filter(fn => 
+      filesToProcess.includes(fn.filePath)
+    );
+    const updatedWithDeps = await functionExtractor.applyInternalDependencies(
+      affectedFunctions, 
+      allFunctions
+    );
+    await db.updateFunctions(updatedWithDeps);
+    log(`Recomputed dependencies for ${affectedFunctions.length} functions`);
+
+    // Step 5: Recompute embeddings for affected functions only
+    const updatedWithEmbeddings = await Promise.all(
+      updatedWithDeps.map(fn => addEmbedding(fn))
+    );
+    await db.updateFunctions(updatedWithEmbeddings);
+    log(`Recomputed embeddings for ${updatedWithEmbeddings.length} functions`);
+  }
+
+  // Step 6: Update file tracking
+  await updateFileTracking(changeSet, repoPath, functionExtractor, db);
+  log("Incremental update complete");
+}

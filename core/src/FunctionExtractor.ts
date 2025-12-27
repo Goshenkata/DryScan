@@ -22,6 +22,67 @@ export class FunctionExtractor {
     this.extractors = extractors;
   }
 
+  /**
+   * Lists all supported source files in a directory recursively.
+   * Only returns files that have a matching extractor.
+   */
+  async listSourceFiles(dirPath: string): Promise<string[]> {
+    const fullPath = path.isAbsolute(dirPath)
+      ? dirPath
+      : path.join(this.root, dirPath);
+
+    const stat = await fs.stat(fullPath).catch(() => null);
+    if (!stat) {
+      throw new Error(`Path not found: ${fullPath}`);
+    }
+
+    if (stat.isFile()) {
+      // Single file: check if supported
+      const supported = this.extractors.some(ex => ex.supports(fullPath));
+      return supported ? [this.relPath(fullPath)] : [];
+    }
+
+    // Directory: recursively list all supported files
+    return this.listSourceFilesInDirectory(fullPath);
+  }
+
+  /**
+   * Recursively lists all supported source files in a directory.
+   */
+  private async listSourceFilesInDirectory(dir: string): Promise<string[]> {
+    const files: string[] = [];
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      const child = path.join(dir, entry.name);
+      
+      if (entry.isDirectory()) {
+        const nested = await this.listSourceFilesInDirectory(child);
+        files.push(...nested);
+      } else if (entry.isFile()) {
+        const supported = this.extractors.some(ex => ex.supports(child));
+        if (supported) {
+          files.push(this.relPath(child));
+        }
+      }
+    }
+    
+    return files;
+  }
+
+  /**
+   * Computes MD5 checksum of file content.
+   * Used to detect file changes during incremental updates.
+   */
+  async computeChecksum(filePath: string): Promise<string> {
+    const fullPath = path.isAbsolute(filePath)
+      ? filePath
+      : path.join(this.root, filePath);
+    
+    const content = await fs.readFile(fullPath, "utf8");
+    return crypto.createHash("md5").update(content).digest("hex");
+  }
+
   async scan(targetPath: string): Promise<FunctionInfo[]> {
     const fullPath = path.isAbsolute(targetPath)
       ? targetPath

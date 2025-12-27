@@ -1,0 +1,250 @@
+import { describe, it, beforeEach, afterEach } from "node:test";
+import assert from "node:assert";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+import { DryScan, DryScanDatabase } from "../dist/index.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * Test suite for updateIndex functionality.
+ * Tests incremental updates via file change detection.
+ */
+describe("updateIndex", () => {
+  const testRepoPath = path.join(__dirname, "temp-test-repo");
+  const dryDir = path.join(testRepoPath, ".dry");
+  let dryScan;
+  let db;
+
+  beforeEach(async () => {
+    // Create test repository
+    await fs.mkdir(testRepoPath, { recursive: true });
+    
+    // Create initial test file
+    await fs.writeFile(
+      path.join(testRepoPath, "test.js"),
+      `function hello() { return "world"; }\nfunction goodbye() { return "farewell"; }`
+    );
+
+    dryScan = new DryScan(testRepoPath);
+    db = new DryScanDatabase();
+  });
+
+  afterEach(async () => {
+    // Cleanup
+    if (db?.isInitialized()) {
+      await db.close();
+    }
+    await fs.rm(testRepoPath, { recursive: true, force: true });
+  });
+
+  it("should detect and process new files", async () => {
+    // Initialize with one file
+    await dryScan.init();
+    
+    // Initialize db to check initial state
+    const dbPath = path.join(dryDir, "index.db");
+    await db.init(dbPath);
+    
+    let functions = await db.getAllFunctions();
+    assert.strictEqual(functions.length, 2, "Should have 2 initial functions");
+
+    // Add a new file
+    await fs.writeFile(
+      path.join(testRepoPath, "new.js"),
+      `function newFunc() { return "new"; }`
+    );
+
+    // Update index
+    await dryScan.updateIndex();
+
+    // Verify new function added
+    functions = await db.getAllFunctions();
+    assert.strictEqual(functions.length, 3, "Should have 3 functions after adding new file");
+    
+    const newFunc = functions.find(f => f.name === "newFunc");
+    assert.ok(newFunc, "Should find newFunc");
+    assert.strictEqual(newFunc.filePath, "new.js");
+  });
+
+  it("should detect and process changed files", async () => {
+    // Initialize
+    await dryScan.init();
+    
+    const dbPath = path.join(dryDir, "index.db");
+    await db.init(dbPath);
+    
+    let functions = await db.getAllFunctions();
+    const originalCount = functions.length;
+    assert.strictEqual(originalCount, 2, "Should have 2 initial functions");
+
+    // Modify file - add a new function
+    await fs.writeFile(
+      path.join(testRepoPath, "test.js"),
+      `function hello() { return "world"; }\nfunction goodbye() { return "farewell"; }\nfunction added() { return "added"; }`
+    );
+
+    // Small delay to ensure mtime changes
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Update index
+    await dryScan.updateIndex();
+
+    // Verify function added
+    functions = await db.getAllFunctions();
+    assert.strictEqual(functions.length, 3, "Should have 3 functions after change");
+    
+    const addedFunc = functions.find(f => f.name === "added");
+    assert.ok(addedFunc, "Should find added function");
+  });
+
+  it("should detect and remove deleted files", async () => {
+    // Initialize with two files
+    await fs.writeFile(
+      path.join(testRepoPath, "temp.js"),
+      `function temp() { return "temporary"; }`
+    );
+    
+    await dryScan.init();
+    
+    const dbPath = path.join(dryDir, "index.db");
+    await db.init(dbPath);
+    
+    let functions = await db.getAllFunctions();
+    assert.strictEqual(functions.length, 3, "Should have 3 initial functions");
+
+    // Delete one file
+    await fs.unlink(path.join(testRepoPath, "temp.js"));
+
+    // Update index
+    await dryScan.updateIndex();
+
+    // Verify function removed
+    functions = await db.getAllFunctions();
+    assert.strictEqual(functions.length, 2, "Should have 2 functions after deletion");
+    
+    const tempFunc = functions.find(f => f.name === "temp");
+    assert.strictEqual(tempFunc, undefined, "temp function should be removed");
+  });
+
+  it("should track files with checksum and mtime", async () => {
+    // Initialize
+    await dryScan.init();
+    
+    const dbPath = path.join(dryDir, "index.db");
+    await db.init(dbPath);
+    
+    // Verify file tracking
+    const files = await db.getAllFiles();
+    assert.strictEqual(files.length, 1, "Should track 1 file");
+    
+    const trackedFile = files[0];
+    assert.strictEqual(trackedFile.filePath, "test.js");
+    assert.ok(trackedFile.checksum, "Should have checksum");
+    assert.ok(trackedFile.mtime > 0, "Should have mtime");
+  });
+
+  it("should not reprocess unchanged files", async () => {
+    // Initialize
+    await dryScan.init();
+    
+    const dbPath = path.join(dryDir, "index.db");
+    await db.init(dbPath);
+    
+    const filesBefore = await db.getAllFiles();
+    const checksumBefore = filesBefore[0].checksum;
+
+    // Update without changes
+    await dryScan.updateIndex();
+
+    // Verify checksum unchanged
+    const filesAfter = await db.getAllFiles();
+    assert.strictEqual(filesAfter[0].checksum, checksumBefore, "Checksum should not change");
+  });
+
+  it("should recompute dependencies for changed functions", async () => {
+    // Create file with function calling another
+    await fs.writeFile(
+      path.join(testRepoPath, "caller.js"),
+      `function caller() { return callee(); }\nfunction callee() { return "result"; }`
+    );
+
+    await dryScan.init();
+    
+    const dbPath = path.join(dryDir, "index.db");
+    await db.init(dbPath);
+    
+    let functions = await db.getAllFunctions();
+    let caller = functions.find(f => f.name === "caller");
+    
+    // Verify initial dependency
+    assert.ok(caller.internalFunctions, "Should have internal functions");
+    assert.ok(
+      caller.internalFunctions.some(f => f.name === "callee"),
+      "Should call callee"
+    );
+
+    // Modify file - change called function name
+    await fs.writeFile(
+      path.join(testRepoPath, "caller.js"),
+      `function caller() { return newCallee(); }\nfunction newCallee() { return "result"; }`
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Update index
+    await dryScan.updateIndex();
+
+    // Verify dependency updated
+    functions = await db.getAllFunctions();
+    caller = functions.find(f => f.name === "caller");
+    
+    assert.ok(
+      caller.internalFunctions.some(f => f.name === "newCallee"),
+      "Should now call newCallee"
+    );
+    assert.ok(
+      !caller.internalFunctions.some(f => f.name === "callee"),
+      "Should not call callee anymore"
+    );
+  });
+
+  it("should recompute embeddings for changed functions", async () => {
+    // Initialize
+    await dryScan.init();
+    
+    const dbPath = path.join(dryDir, "index.db");
+    await db.init(dbPath);
+    
+    let functions = await db.getAllFunctions();
+    let hello = functions.find(f => f.name === "hello");
+    const originalEmbedding = hello.embedding;
+    
+    assert.ok(originalEmbedding, "Should have embedding");
+    assert.ok(originalEmbedding.length > 0, "Embedding should not be empty");
+
+    // Modify function code significantly
+    await fs.writeFile(
+      path.join(testRepoPath, "test.js"),
+      `function hello() { return "completely different implementation with more code"; }\nfunction goodbye() { return "farewell"; }`
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Update index
+    await dryScan.updateIndex();
+
+    // Verify embedding changed
+    functions = await db.getAllFunctions();
+    hello = functions.find(f => f.name === "hello");
+    
+    assert.ok(hello.embedding, "Should have new embedding");
+    assert.notDeepStrictEqual(
+      hello.embedding,
+      originalEmbedding,
+      "Embedding should be different"
+    );
+  });
+});
