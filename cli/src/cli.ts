@@ -75,6 +75,17 @@ program
   });
 
 program
+  .command('update')
+  .description('Update the DryScan index (incremental scan for changes)')
+  .argument('[path]', 'Repository path', '.')
+  .action(async (path: string) => {
+    const repoPath = resolve(path);
+    const scanner = new DryScan(repoPath);
+    await scanner.updateIndex();
+    console.log('DryScan index updated successfully');
+  });
+
+program
   .command('dupes')
   .description('Find duplicate code blocks')
   .argument('[path]', 'Repository path', '.')

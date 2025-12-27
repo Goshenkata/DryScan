@@ -47,6 +47,8 @@ public class UserService {
         
         int startQuote = decodedPayload.indexOf("\"", userIdIndex + 9);
         int endQuote = decodedPayload.indexOf("\"", startQuote + 1);
+        AccountService accountService = new AccountService();
+        accountService.getUserById(1L);
         
         return decodedPayload.substring(startQuote + 1, endQuote);
     }

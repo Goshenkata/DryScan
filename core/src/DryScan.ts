@@ -168,6 +168,7 @@ export class DryScan {
 
   /**
    * Finds duplicate code blocks using cosine similarity on embeddings.
+   * Automatically updates the index before searching to ensure results are current.
    * Compares all function pairs and returns groups with similarity above threshold.
    * 
    * @param threshold - Minimum similarity score (0-1) to consider functions as duplicates. Default: 0.85
@@ -182,6 +183,13 @@ export class DryScan {
       await this.db.init(dbPath);
     }
     
+    // Step 1: Update index to ensure we have the latest code
+    log("Step 1: Updating index to ensure latest code is analyzed...");
+    await this.updateIndex();
+    log("Index update complete. Proceeding with duplicate detection.");
+    
+    // Step 2: Load all functions and filter those with embeddings
+    log("Step 2: Loading functions from database...");
     const allFunctions = await this.db.getAllFunctions();
     const functionsWithEmbeddings = allFunctions.filter(fn => fn.embedding && fn.embedding.length > 0);
     
@@ -192,6 +200,8 @@ export class DryScan {
       return [];
     }
     
+    // Step 3: Compute duplicates using cosine similarity
+    log("Step 3: Computing similarity between function pairs...");
     const duplicates = this.computeDuplicates(functionsWithEmbeddings, threshold);
     log(`Found ${duplicates.length} duplicate groups`);
     
