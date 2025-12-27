@@ -1,3 +1,28 @@
+## Project Roadmap / TODOs
+
+ - [ ] **Core Improvements**
+	- [ ] [ADR-001: Multi-level duplication units (class, function, block)](.github/docs/adr-001-multilevel-duplication-units.md)
+	- [ ] AI triviality detection
+    - [ ] add dryscan config
+	- [ ] Compute Duplication score
+	- [ ] AI backend agnostic (Ollama, OpenAI, etc.)
+
+- [ ] **VS Code Extension**
+	- [ ] Inline duplicate highlighting
+	- [ ] Show duplication score in editor
+	- [ ] Model switch UI
+	- [ ] Refactoring suggestions
+	- [ ] Quick ignore/add to .dryignore
+
+- [ ] **CI/CD Tools**
+	- [ ] Dockerized CLI
+	- [ ] GitHub Action
+	- [ ] Failure thresholds (block PRs)
+	- [ ] Duplication score in CI reports
+
+- [ ] **Add-on Features**
+    - [ ] Use real static code analisys
+	- [ ] Cross-repo analysis 
 # DryScan
 A Semantic Code Duplication & Reuse Analyzer
 
