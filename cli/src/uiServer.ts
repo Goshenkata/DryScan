@@ -4,16 +4,25 @@ import { resolve, join } from "path";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import Handlebars from "handlebars";
-import { DuplicateGroup } from "@dryscan/core";
+import { DuplicateGroup, DuplicationScore } from "@dryscan/core";
 
 export interface UiServerOptions {
   port?: number;
   threshold: number;
   repoPath: string;
   duplicates: DuplicateGroup[];
+  score: DuplicationScore;
 }
 
 const defaultPort = 3000;
+
+const gradeMeta: Record<DuplicationScore["grade"], { emoji: string; className: string }> = {
+  Excellent: { emoji: "🌟", className: "excellent" },
+  Good: { emoji: "👍", className: "good" },
+  Fair: { emoji: "⚠️", className: "fair" },
+  Poor: { emoji: "🚨", className: "poor" },
+  Critical: { emoji: "🔥", className: "critical" },
+};
 
 /**
  * Responsible for serving the interactive duplicates UI.
@@ -31,7 +40,7 @@ export class DuplicateReportServer {
   }
 
   async start(): Promise<void> {
-    const { threshold, duplicates } = this.options;
+    const { threshold, duplicates, score } = this.options;
     const template = await this.templatePromise;
 
     this.server = createServer(async (req, res) => {
@@ -74,6 +83,7 @@ export class DuplicateReportServer {
         const html = template({
           thresholdPct: Math.round(threshold * 100),
           duplicatesJson: JSON.stringify(duplicates),
+          score: buildScoreView(score),
         });
         res.end(html);
       } catch (err: any) {
@@ -96,4 +106,17 @@ async function loadTemplate(): Promise<Handlebars.TemplateDelegate> {
   const templatePath = join(fileURLToPath(new URL(".", import.meta.url)), "templates", "report.hbs");
   const source = await readFile(templatePath, "utf8");
   return Handlebars.compile(source, { noEscape: true });
+}
+
+function buildScoreView(score: DuplicationScore) {
+  const meta = gradeMeta[score.grade] ?? gradeMeta.Fair;
+  return {
+    ...score,
+    gradeClass: meta.className,
+    emoji: meta.emoji,
+    scoreRounded: score.score.toFixed(1),
+    totalLinesFormatted: score.totalLines.toLocaleString(),
+    duplicateLinesFormatted: score.duplicateLines.toLocaleString(),
+    duplicateGroupsFormatted: score.duplicateGroups.toLocaleString(),
+  };
 }

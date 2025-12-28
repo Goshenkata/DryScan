@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { DryScan, DuplicateGroup } from '@dryscan/core';
+import { DryScan, DuplicateGroup, DuplicateAnalysisResult } from '@dryscan/core';
 import { resolve } from 'path';
 import { DuplicateReportServer } from './uiServer.js';
 
@@ -10,7 +10,17 @@ const UI_PORT = 3000;
  * Formats duplicate groups in a human-readable format.
  * Shows similarity percentage, file locations, and code snippets.
  */
-function formatDuplicates(duplicates: DuplicateGroup[], threshold: number): void {
+function formatDuplicates(result: DuplicateAnalysisResult, threshold: number): void {
+  const { duplicates, score } = result;
+  
+  // Display duplication score prominently
+  console.log('\n' + '═'.repeat(80));
+  console.log(`\n📊 DUPLICATION SCORE: ${score.score.toFixed(2)}% - ${score.grade}`);
+  console.log(`   Total Lines: ${score.totalLines.toLocaleString()}`);
+  console.log(`   Duplicate Lines (weighted): ${score.duplicateLines.toLocaleString()}`);
+  console.log(`   Duplicate Groups: ${score.duplicateGroups}`);
+  console.log('\n' + '═'.repeat(80));
+  
   if (duplicates.length === 0) {
     console.log(`\n✓ No duplicates found (threshold: ${(threshold * 100).toFixed(0)}%)\n`);
     return;
@@ -100,13 +110,14 @@ program
     const threshold = parseFloat(options.threshold || '0.85');
     
     const scanner = new DryScan(repoPath);
-    const duplicates = await scanner.findDuplicates(threshold);
+    const result = await scanner.findDuplicates(threshold);
     
     if (options.ui) {
       const server = new DuplicateReportServer({
         repoPath,
         threshold,
-        duplicates,
+        duplicates: result.duplicates,
+        score: result.score,
         port: UI_PORT,
       });
       await server.start();
@@ -115,10 +126,10 @@ program
 
     if (options.json) {
       // Output as JSON
-      console.log(JSON.stringify(duplicates, null, 2));
+      console.log(JSON.stringify(result, null, 2));
     } else {
       // Human-readable format
-      formatDuplicates(duplicates, threshold);
+      formatDuplicates(result, threshold);
     }
   });
 

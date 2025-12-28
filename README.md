@@ -1,10 +1,10 @@
 ## Project Roadmap / TODOs
 
  - [ ] **Core Improvements**
-	- [ ] [ADR-001: Multi-level duplication units (class, function, block)](.github/docs/adr-001-multilevel-duplication-units.md)
+	- [x] [ADR-001: Multi-level duplication units (class, function, block)](.github/docs/adr-001-multilevel-duplication-units.md)
 	- [ ] AI triviality detection
     - [ ] add dryscan config
-	- [ ] Compute Duplication score
+	- [x] Compute Duplication score
 	- [ ] AI backend agnostic (Ollama, OpenAI, etc.)
 
 - [ ] **VS Code Extension**

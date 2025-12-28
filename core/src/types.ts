@@ -11,6 +11,19 @@ export interface DuplicateGroup {
   right: DuplicateSide;
 }
 
+export interface DuplicationScore {
+  score: number;
+  grade: 'Excellent' | 'Good' | 'Fair' | 'Poor' | 'Critical';
+  totalLines: number;
+  duplicateLines: number;
+  duplicateGroups: number;
+}
+
+export interface DuplicateAnalysisResult {
+  duplicates: DuplicateGroup[];
+  score: DuplicationScore;
+}
+
 export interface DuplicateSide {
   name: string;
   filePath: string;

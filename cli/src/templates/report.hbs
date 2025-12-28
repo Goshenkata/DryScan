@@ -23,6 +23,11 @@
       --block: #a855f7;
       --text: #e6edf7;
       --code-bg: #0a0f1e;
+      --excellent: #10b981;
+      --good: #22d3ee;
+      --fair: #f59e0b;
+      --poor: #f97316;
+      --critical: #ef4444;
     }
     [data-theme='light'] {
       --bg: #f7f9fc;
@@ -39,6 +44,11 @@
       --block: #8b5cf6;
       --text: #0f172a;
       --code-bg: #f5f7fb;
+      --excellent: #059669;
+      --good: #0891b2;
+      --fair: #d97706;
+      --poor: #ea580c;
+      --critical: #dc2626;
     }
     * { box-sizing: border-box; }
     body {
@@ -75,11 +85,64 @@
       color: var(--text); font-size: 12px; letter-spacing: 0.02em;
       transition: background 0.3s ease, border 0.3s ease, color 0.3s ease;
     }
+    .pill .pill-emoji { font-size: 14px; }
     .pill.accent { color: var(--accent); border-color: rgba(94,234,212,0.3); }
     .pill.type { font-weight: 700; text-transform: uppercase; }
     .pill.class { color: var(--class); border-color: rgba(245,158,11,0.35); }
     .pill.function { color: var(--function); border-color: rgba(34,211,238,0.35); }
-    .pill.block { color: var(--block); border-color: rgba(168,85,247,0.35); }
+    .pill.excellent { color: var(--excellent); border-color: rgba(16,185,129,0.35); font-weight: 700; }
+    .pill.good { color: var(--good); border-color: rgba(34,211,238,0.35); font-weight: 700; }
+    .pill.fair { color: var(--fair); border-color: rgba(245,158,11,0.35); font-weight: 700; }
+    .pill.poor { color: var(--poor); border-color: rgba(249,115,22,0.35); font-weight: 700; }
+    .pill.critical { color: var(--critical); border-color: rgba(239,68,68,0.35); font-weight: 700; }
+    .score-card {
+      margin-top: 28px;
+      padding: 28px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.04);
+      background: linear-gradient(135deg, rgba(96,165,250,0.08), rgba(13,23,45,0.9));
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+    }
+    [data-theme='light'] .score-card {
+      background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(255,255,255,0.95));
+      border-color: rgba(15,23,42,0.08);
+    }
+    .score-main { flex: 1 1 240px; }
+    .score-label { text-transform: uppercase; font-size: 12px; letter-spacing: 0.2em; color: var(--muted); }
+    .score-value { display: flex; align-items: baseline; gap: 18px; margin-top: 12px; }
+    .score-number { font-size: 56px; font-weight: 700; letter-spacing: -0.04em; }
+    .score-grade { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; text-transform: uppercase; }
+    .score-grade.excellent { color: var(--excellent); }
+    .score-grade.good { color: var(--good); }
+    .score-grade.fair { color: var(--fair); }
+    .score-grade.poor { color: var(--poor); }
+    .score-grade.critical { color: var(--critical); }
+    .score-emoji { font-size: 20px; }
+    .score-description { margin-top: 8px; color: var(--muted); font-size: 14px; max-width: 420px; }
+    .score-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; flex: 2 1 320px; }
+    .metric {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    [data-theme='light'] .metric { background: rgba(15,23,42,0.02); }
+    .metric-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted); }
+    .metric-value { font-size: 20px; font-weight: 600; }
+    .overview-text {
+      margin-top: 18px;
+      padding: 14px 18px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 15px;
+    }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; margin-top: 14px; }
     .side { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; transition: background 0.3s ease, border 0.3s ease; }
     .path { font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 12px; margin-bottom: 6px; word-break: break-all; }
@@ -105,13 +168,45 @@
       <div class="header-left">
         <h1>DryScan Duplicate Report</h1>
         <span class="pill accent">Threshold {{thresholdPct}}%</span>
-        <span class="pill">Side-by-side view with syntax highlighting</span>
+        <span class="pill {{score.gradeClass}}"><span class="pill-emoji">{{score.emoji}}</span>{{score.scoreRounded}}% · {{score.grade}}</span>
       </div>
       <div class="header-right">
         <button class="toggle" id="theme-toggle"><span class="toggle-icon">🌙</span><span id="theme-label">Dark</span></button>
       </div>
     </div>
-    <div class="sub">Duplicate classes, functions, and blocks. Click "View full file" to open the whole source for context.</div>
+    <section class="score-card">
+      <div class="score-main">
+        <div class="score-label">Duplication Score</div>
+        <div class="score-value">
+          <span class="score-number">{{score.scoreRounded}}%</span>
+          <span class="score-grade {{score.gradeClass}}">
+            <span class="score-emoji">{{score.emoji}}</span>
+            {{score.grade}}
+          </span>
+        </div>
+        <p class="score-description">Weighted duplicate lines across the entire codebase. Lower numbers indicate healthier reuse.</p>
+      </div>
+      <div class="score-metrics">
+        <div class="metric">
+          <span class="metric-label">Total Lines</span>
+          <span class="metric-value">{{score.totalLinesFormatted}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Duplicate Lines</span>
+          <span class="metric-value">{{score.duplicateLinesFormatted}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Duplicate Groups</span>
+          <span class="metric-value">{{score.duplicateGroupsFormatted}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Similarity Threshold</span>
+          <span class="metric-value">{{thresholdPct}}%</span>
+        </div>
+      </div>
+    </section>
+
+    <p class="overview-text">{{score.emoji}} Higher scores indicate more duplication pressure. Review the duplicate groups below or open the full files for additional context.</p>
     <div id="groups"></div>
   </div>
 

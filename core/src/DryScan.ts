@@ -2,7 +2,7 @@ import upath from "upath";
 import fs from "fs/promises";
 import path from "path";
 import debug from "debug";
-import { DuplicateGroup, IndexUnit, IndexUnitType } from "./types";
+import { DuplicateGroup, DuplicateAnalysisResult, DuplicationScore, IndexUnit, IndexUnitType } from "./types";
 import { DRYSCAN_DIR, INDEX_DB } from "./const";
 import { defaultExtractors, FunctionExtractor } from "./FunctionExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
@@ -182,9 +182,9 @@ export class DryScan {
    * Compares all function pairs and returns groups with similarity above threshold.
    * 
    * @param threshold - Minimum similarity score (0-1) to consider functions as duplicates. Default: 0.85
-   * @returns Array of duplicate groups with similarity scores
+   * @returns Analysis result with duplicate groups and duplication score
    */
-  async findDuplicates(threshold?: number): Promise<DuplicateGroup[]> {
+  async findDuplicates(threshold?: number): Promise<DuplicateAnalysisResult> {
     log("Finding duplicates with threshold", threshold);
     
     // Initialize database if needed
@@ -207,7 +207,8 @@ export class DryScan {
     
     if (unitsWithEmbeddings.length < 2) {
       log("Not enough units with embeddings to compare");
-      return [];
+      const score = this.computeDuplicationScore([], allUnits);
+      return { duplicates: [], score };
     }
     
     // Step 3: Compute duplicates using cosine similarity
@@ -215,7 +216,11 @@ export class DryScan {
     const duplicates = this.computeDuplicates(unitsWithEmbeddings, threshold ?? indexConfig.thresholds.function);
     log(`Found ${duplicates.length} duplicate groups`);
     
-    return duplicates;
+    // Step 4: Compute duplication score
+    const score = this.computeDuplicationScore(duplicates, allUnits);
+    log(`Duplication score: ${score.score.toFixed(2)}% (${score.grade})`);
+    
+    return { duplicates, score };
   }
 
   /**
@@ -322,6 +327,71 @@ export class DryScan {
       current = current.parent;
     }
     return null;
+  }
+
+  /**
+   * Computes a duplication score using weighted impact formula:
+   * score = Σ(similarity × lines_in_duplicate_pair) / total_lines_of_code × 100
+   * 
+   * This accounts for both how similar duplicates are and their size impact.
+   * 
+   * @param duplicates - Array of detected duplicate groups
+   * @param allUnits - All code units in the codebase
+   * @returns Duplication score with grade and metrics
+   */
+  private computeDuplicationScore(duplicates: DuplicateGroup[], allUnits: IndexUnit[]): DuplicationScore {
+    const totalLines = this.calculateTotalLines(allUnits);
+    
+    if (totalLines === 0 || duplicates.length === 0) {
+      return {
+        score: 0,
+        grade: 'Excellent',
+        totalLines,
+        duplicateLines: 0,
+        duplicateGroups: 0,
+      };
+    }
+    
+    // Calculate weighted duplicate lines using similarity as weight
+    const weightedDuplicateLines = duplicates.reduce((sum, group) => {
+      const leftLines = group.left.endLine - group.left.startLine + 1;
+      const rightLines = group.right.endLine - group.right.startLine + 1;
+      const avgLines = (leftLines + rightLines) / 2;
+      return sum + (group.similarity * avgLines);
+    }, 0);
+    
+    const score = (weightedDuplicateLines / totalLines) * 100;
+    const grade = this.getScoreGrade(score);
+    
+    return {
+      score,
+      grade,
+      totalLines,
+      duplicateLines: Math.round(weightedDuplicateLines),
+      duplicateGroups: duplicates.length,
+    };
+  }
+
+  /**
+   * Calculates total lines of code across all units.
+   */
+  private calculateTotalLines(units: IndexUnit[]): number {
+    return units.reduce((sum, unit) => {
+      const lines = unit.endLine - unit.startLine + 1;
+      return sum + lines;
+    }, 0);
+  }
+
+  /**
+   * Determines the grade based on duplication score percentage.
+   * Lower scores are better (less duplication).
+   */
+  private getScoreGrade(score: number): 'Excellent' | 'Good' | 'Fair' | 'Poor' | 'Critical' {
+    if (score < 5) return 'Excellent';
+    if (score < 15) return 'Good';
+    if (score < 30) return 'Fair';
+    if (score < 50) return 'Poor';
+    return 'Critical';
   }
 
   private async isInitialized(): Promise<boolean> {
