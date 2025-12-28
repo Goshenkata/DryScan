@@ -12,10 +12,12 @@ export interface DuplicateGroup {
 }
 
 export interface DuplicateSide {
+  name: string;
   filePath: string;
   startLine: number;
   endLine: number;
   code: string;
+  unitType: IndexUnitType;
 }
 
 export interface IndexUnit {

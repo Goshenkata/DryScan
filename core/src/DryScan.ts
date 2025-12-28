@@ -13,6 +13,10 @@ import { indexConfig } from "./config/indexConfig";
 
 const log = debug("DryScan");
 
+export interface InitOptions {
+  skipEmbeddings?: boolean;
+}
+
 
 export class DryScan {
   repoPath: string;
@@ -35,7 +39,7 @@ export class DryScan {
    * Phase 2: Resolve and save internal dependencies
    * Phase 3: Compute and save semantic embeddings
    */
-  async init(): Promise<void> {
+  async init(options?: InitOptions): Promise<void> {
     log("Initializing DryScan repository at", this.repoPath);
     if (await this.isInitialized()) {
       log("Repository already initialized.");
@@ -50,7 +54,7 @@ export class DryScan {
     log("Phase 2: Resolving internal dependencies for methods...");
     await this.applyDependencies();
     log("Phase 3: Computing embeddings for all units...");
-    await this.computeEmbeddings();
+    await this.computeEmbeddings(options?.skipEmbeddings === true);
     log("Phase 4: Tracking files...");
     await this.trackFiles();
     log("DryScan initialization complete.");
@@ -248,16 +252,20 @@ export class DryScan {
               id: `${left.id}::${right.id}`,
               similarity,
               left: {
+                name: left.name,
                 filePath: left.filePath,
                 startLine: left.startLine,
                 endLine: left.endLine,
                 code: left.code,
+                unitType: left.unitType,
               },
               right: {
+                name: right.name,
                 filePath: right.filePath,
                 startLine: right.startLine,
                 endLine: right.endLine,
                 code: right.code,
+                unitType: right.unitType,
               },
             });
           }
