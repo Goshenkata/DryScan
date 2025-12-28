@@ -213,7 +213,8 @@ export class DryScan {
     
     // Step 3: Compute duplicates using cosine similarity
     log("Step 3: Computing similarity between unit pairs...");
-    const duplicates = this.computeDuplicates(unitsWithEmbeddings, threshold ?? indexConfig.thresholds.function);
+    const thresholds = this.resolveThresholds(threshold);
+    const duplicates = this.computeDuplicates(unitsWithEmbeddings, thresholds);
     log(`Found ${duplicates.length} duplicate groups`);
     
     // Step 4: Compute duplication score
@@ -223,15 +224,35 @@ export class DryScan {
     return { duplicates, score };
   }
 
+  private resolveThresholds(functionThreshold?: number): { function: number; block: number; class: number } {
+    const defaults = indexConfig.thresholds;
+    const clamp = (value: number) => Math.min(1, Math.max(0, value));
+
+    // Preserve caller-provided function threshold; derive others by their default offsets.
+    const base = functionThreshold ?? defaults.function;
+    const blockOffset = defaults.block - defaults.function;
+    const classOffset = defaults.class - defaults.function;
+
+    const functionThresholdValue = clamp(base);
+    return {
+      function: functionThresholdValue,
+      block: clamp(functionThresholdValue + blockOffset),
+      class: clamp(functionThresholdValue + classOffset),
+    };
+  }
+
   /**
    * Computes duplicate groups by comparing all function pairs using cosine similarity.
    * Only compares each pair once (i < j) to avoid redundant comparisons.
    * 
    * @param functions - Functions with embeddings to compare
-   * @param threshold - Minimum similarity score to consider as duplicate
+   * @param thresholds - Per-unit-type similarity thresholds
    * @returns Sorted array of duplicate groups (highest similarity first)
    */
-  private computeDuplicates(units: IndexUnit[], fallbackThreshold: number): DuplicateGroup[] {
+  private computeDuplicates(
+    units: IndexUnit[],
+    thresholds: { function: number; block: number; class: number }
+  ): DuplicateGroup[] {
     const duplicates: DuplicateGroup[] = [];
     const byType = new Map<IndexUnitType, IndexUnit[]>();
 
@@ -242,7 +263,7 @@ export class DryScan {
     }
 
     for (const [type, typedUnits] of byType.entries()) {
-      const threshold = this.getThreshold(type, fallbackThreshold);
+      const threshold = this.getThreshold(type, thresholds);
 
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
@@ -281,10 +302,10 @@ export class DryScan {
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
 
-  private getThreshold(type: IndexUnitType, fallback: number): number {
-    if (type === IndexUnitType.CLASS) return indexConfig.thresholds.class;
-    if (type === IndexUnitType.BLOCK) return indexConfig.thresholds.block;
-    return indexConfig.thresholds.function ?? fallback;
+  private getThreshold(type: IndexUnitType, thresholds: { function: number; block: number; class: number }): number {
+    if (type === IndexUnitType.CLASS) return thresholds.class;
+    if (type === IndexUnitType.BLOCK) return thresholds.block;
+    return thresholds.function;
   }
 
   private computeWeightedSimilarity(left: IndexUnit, right: IndexUnit): number {
