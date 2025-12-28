@@ -22,5 +22,7 @@
 - Each step uses "partial" helper functions to enable future incremental updates when files change.
 
 ## Testing
-
-Run `./test-integration.sh` from project root to verify end-to-end functionality on the test Java project.
+1. Run `./test-integration.sh` from project root to verify end-to-end functionality on the test Java project. This will run the cli commands in the ./test-java-project directory and create a .dry folder.
+2. You can run sql queries against the generated SQLite DB at `./test-java-project/.dry/index.db` using the terminal command `sqlite3 ./test-java-project/.dry/index.db "SQL_QUERY"`.
+3. You can run unit tests with `npm test`
+4. Make sure ollama service is running.

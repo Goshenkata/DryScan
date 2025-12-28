@@ -48,14 +48,14 @@ describe("updateIndex", () => {
 
   it("should detect and process new files", async () => {
     // Initialize with one file
-    await dryScan.init();
+    await dryScan.init({ skipEmbeddings: true });
     
     // Initialize db to check initial state
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllFunctions();
-    assert.strictEqual(functions.length, 2, "Should have 2 initial functions");
+    let functions = await db.getAllUnits();
+    assert.strictEqual(functions.length, 2, "Should have 2 initial units");
 
     // Add a new file
     await fs.writeFile(
@@ -67,8 +67,8 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify new function added
-    functions = await db.getAllFunctions();
-    assert.strictEqual(functions.length, 3, "Should have 3 functions after adding new file");
+    functions = await db.getAllUnits();
+    assert.strictEqual(functions.length, 3, "Should have 3 units after adding new file");
     
     const newFunc = functions.find(f => f.name === "newFunc");
     assert.ok(newFunc, "Should find newFunc");
@@ -77,12 +77,12 @@ describe("updateIndex", () => {
 
   it("should detect and process changed files", async () => {
     // Initialize
-    await dryScan.init();
+    await dryScan.init({ skipEmbeddings: true });
     
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllFunctions();
+    let functions = await db.getAllUnits();
     const originalCount = functions.length;
     assert.strictEqual(originalCount, 2, "Should have 2 initial functions");
 
@@ -99,8 +99,8 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify function added
-    functions = await db.getAllFunctions();
-    assert.strictEqual(functions.length, 3, "Should have 3 functions after change");
+    functions = await db.getAllUnits();
+    assert.strictEqual(functions.length, 3, "Should have 3 units after change");
     
     const addedFunc = functions.find(f => f.name === "added");
     assert.ok(addedFunc, "Should find added function");
@@ -113,13 +113,13 @@ describe("updateIndex", () => {
       `function temp() { return "temporary"; }`
     );
     
-    await dryScan.init();
+    await dryScan.init({ skipEmbeddings: true });
     
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllFunctions();
-    assert.strictEqual(functions.length, 3, "Should have 3 initial functions");
+    let functions = await db.getAllUnits();
+    assert.strictEqual(functions.length, 3, "Should have 3 initial units");
 
     // Delete one file
     await fs.unlink(path.join(testRepoPath, "temp.js"));
@@ -128,8 +128,8 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify function removed
-    functions = await db.getAllFunctions();
-    assert.strictEqual(functions.length, 2, "Should have 2 functions after deletion");
+    functions = await db.getAllUnits();
+    assert.strictEqual(functions.length, 2, "Should have 2 units after deletion");
     
     const tempFunc = functions.find(f => f.name === "temp");
     assert.strictEqual(tempFunc, undefined, "temp function should be removed");
@@ -137,7 +137,7 @@ describe("updateIndex", () => {
 
   it("should track files with checksum and mtime", async () => {
     // Initialize
-    await dryScan.init();
+    await dryScan.init({ skipEmbeddings: true });
     
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
@@ -154,7 +154,7 @@ describe("updateIndex", () => {
 
   it("should not reprocess unchanged files", async () => {
     // Initialize
-    await dryScan.init();
+    await dryScan.init({ skipEmbeddings: true });
     
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
@@ -177,18 +177,18 @@ describe("updateIndex", () => {
       `function caller() { return callee(); }\nfunction callee() { return "result"; }`
     );
 
-    await dryScan.init();
+    await dryScan.init({ skipEmbeddings: true });
     
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllFunctions();
+    let functions = await db.getAllUnits();
     let caller = functions.find(f => f.name === "caller");
     
     // Verify initial dependency
-    assert.ok(caller.internalFunctions, "Should have internal functions");
+    assert.ok(caller.callDependencies, "Should have internal functions");
     assert.ok(
-      caller.internalFunctions.some(f => f.name === "callee"),
+      caller.callDependencies.some(f => f.name === "callee"),
       "Should call callee"
     );
 
@@ -204,15 +204,15 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify dependency updated
-    functions = await db.getAllFunctions();
+    functions = await db.getAllUnits();
     caller = functions.find(f => f.name === "caller");
     
     assert.ok(
-      caller.internalFunctions.some(f => f.name === "newCallee"),
+      caller.callDependencies.some(f => f.name === "newCallee"),
       "Should now call newCallee"
     );
     assert.ok(
-      !caller.internalFunctions.some(f => f.name === "callee"),
+      !caller.callDependencies.some(f => f.name === "callee"),
       "Should not call callee anymore"
     );
   });
@@ -224,7 +224,7 @@ describe("updateIndex", () => {
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllFunctions();
+    let functions = await db.getAllUnits();
     let hello = functions.find(f => f.name === "hello");
     const originalEmbedding = hello.embedding;
     
@@ -243,7 +243,7 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify embedding changed
-    functions = await db.getAllFunctions();
+    functions = await db.getAllUnits();
     hello = functions.find(f => f.name === "hello");
     
     assert.ok(hello.embedding, "Should have new embedding");
@@ -264,10 +264,10 @@ describe("DryScanUpdater edge cases and errors", () => {
     extractor = new FunctionExtractor(tempDir);
     db = {
       getAllFiles: async () => [],
-      getAllFunctions: async () => [],
-      removeFunctionsByFilePaths: async () => {},
-      saveFunctions: async () => {},
-      updateFunctions: async () => {},
+      getAllUnits: async () => [],
+      removeUnitsByFilePaths: async () => {},
+      saveUnits: async () => {},
+      updateUnits: async () => {},
       saveFiles: async () => {},
       removeFiles: async () => {},
     };

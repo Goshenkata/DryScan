@@ -13,9 +13,9 @@ describe('JavaScriptExtractor', () => {
       expect(results).to.be.an('array').that.is.empty;
     });
 
-    it('returns empty array if extractCallsFromFunction is called before extractFromText', () => {
+      it('returns empty array if extractCallsFromUnit is called before extractFromText', () => {
       const extractor = new JavaScriptExtractor();
-      const calls = extractor.extractCallsFromFunction('SomeFile.js', 'id');
+        const calls = extractor.extractCallsFromUnit('SomeFile.js', 'id');
       expect(calls).to.be.an('array').that.is.empty;
     });
   });
@@ -38,8 +38,8 @@ describe('JavaScriptExtractor', () => {
     const results = await extractor.extractFromText(file, source);
     const names = results.map(r => r.name).sort();
 
-    expect(names).to.include('add');
-    expect(names).to.include('multiply');
+    expect(names.some(n => n === 'add' || n.endsWith('.add'))).to.equal(true);
+    expect(names.some(n => n === 'multiply' || n.endsWith('.multiply'))).to.equal(true);
     // Arrow function may be <anonymous> depending on AST; ensure at least 2+
     expect(results.length).to.be.greaterThanOrEqual(2);
   });

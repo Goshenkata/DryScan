@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import upath from "upath";
 import crypto from "node:crypto";
-import { FunctionInfo } from "./types";
+import { IndexUnit, IndexUnitType } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
 import { JavaScriptExtractor } from "./extractors/javascript";
 import { JavaExtractor } from "./extractors/java";
@@ -83,7 +83,7 @@ export class FunctionExtractor {
     return crypto.createHash("md5").update(content).digest("hex");
   }
 
-  async scan(targetPath: string): Promise<FunctionInfo[]> {
+  async scan(targetPath: string): Promise<IndexUnit[]> {
     const fullPath = path.isAbsolute(targetPath)
       ? targetPath
       : path.join(this.root, targetPath);
@@ -101,48 +101,54 @@ export class FunctionExtractor {
   }
 
   /**
-   * Resolves and applies internal dependencies for a set of functions.
-   * This is the main entry point for Phase 2 of the analysis.
-   * 
-   * @param functions - Functions to process
-   * @param allFunctions - Complete function index for name lookup
-   * @returns Functions with internalFunctions populated
+  * Resolves and applies internal dependencies for a set of functions.
+  * This is the main entry point for Phase 2 of the analysis.
+  * 
+  * @param units - Units to process
+  * @param allUnits - Complete unit index for name lookup
+  * @returns Units with callDependencies populated on functions
    */
-  async applyInternalDependencies(functions: FunctionInfo[], allFunctions: FunctionInfo[]): Promise<FunctionInfo[]> {
-    const nameIndex = this.buildNameIndex(allFunctions);
-    return functions.map(fn => this.applyInternalDependenciesToFunction(fn, nameIndex));
+  async applyInternalDependencies(units: IndexUnit[], allUnits: IndexUnit[]): Promise<IndexUnit[]> {
+    const functions = allUnits.filter(u => u.unitType === IndexUnitType.FUNCTION);
+    const nameIndex = this.buildNameIndex(functions);
+
+    return units.map(unit => {
+      if (unit.unitType !== IndexUnitType.FUNCTION) return unit;
+      return this.applyInternalDependenciesToFunction(unit, nameIndex);
+    });
   }
 
   /**
    * Applies internal dependencies to a single function (partial operation).
    * Extracts call expressions from the function's AST and resolves them to local functions.
    */
-  private applyInternalDependenciesToFunction(fn: FunctionInfo, nameIndex: Map<string, FunctionInfo[]>): FunctionInfo {
+  private applyInternalDependenciesToFunction(fn: IndexUnit, nameIndex: Map<string, IndexUnit[]>): IndexUnit {
     const extractor = this.findExtractor(fn.filePath);
     if (!extractor) return fn;
 
-    const callNames = extractor.extractCallsFromFunction(fn.filePath, fn.id);
-    const internalFunctions = this.resolveInternalCalls(callNames, nameIndex, fn.filePath);
+    const callNames = extractor.extractCallsFromUnit(fn.filePath, fn.id);
+    const resolvedFunctions = this.resolveInternalCalls(callNames, nameIndex, fn.filePath);
 
-    // Create lightweight references (only id is required for relation)
-    const functionRefs = internalFunctions.map(f => ({
+    const functionRefs = resolvedFunctions.map(f => ({
       id: f.id,
       name: f.name,
       filePath: f.filePath,
       startLine: f.startLine,
       endLine: f.endLine,
-      code: f.code
+      code: f.code,
+      unitType: f.unitType,
+      parentId: f.parentId,
     }));
 
-    return { ...fn, internalFunctions: functionRefs };
+    return { ...fn, callDependencies: functionRefs };
   }
 
   /**
    * Resolves call names to actual local functions using the name index.
    * Filters out library/external calls (not in index) and deduplicates.
    */
-  private resolveInternalCalls(callNames: string[], nameIndex: Map<string, FunctionInfo[]>, currentFile: string): FunctionInfo[] {
-    const resolved: FunctionInfo[] = [];
+  private resolveInternalCalls(callNames: string[], nameIndex: Map<string, IndexUnit[]>, currentFile: string): IndexUnit[] {
+    const resolved: IndexUnit[] = [];
     const seen = new Set<string>();
 
     for (const callName of callNames) {
@@ -161,7 +167,7 @@ export class FunctionExtractor {
    * Finds the best matching function from candidates.
    * Prefers same-file matches to handle name collisions.
    */
-  private findBestMatch(candidates: FunctionInfo[], currentFile: string): FunctionInfo | null {
+  private findBestMatch(candidates: IndexUnit[], currentFile: string): IndexUnit | null {
     if (candidates.length === 0) return null;
     
     // Prefer functions in the same file
@@ -176,16 +182,20 @@ export class FunctionExtractor {
    * Builds a name-based index for fast function lookup.
    * Extracts simple names from qualified names (e.g., "Sample.helper" -> "helper").
    */
-  private buildNameIndex(functions: FunctionInfo[]): Map<string, FunctionInfo[]> {
-    const index = new Map<string, FunctionInfo[]>();
-    
+  private buildNameIndex(functions: IndexUnit[]): Map<string, IndexUnit[]> {
+    const index = new Map<string, IndexUnit[]>();
+
     for (const fn of functions) {
       const simpleName = this.extractSimpleName(fn.name);
-      const existing = index.get(simpleName) || [];
-      existing.push(fn);
-      index.set(simpleName, existing);
+      const existingSimple = index.get(simpleName) || [];
+      existingSimple.push(fn);
+      index.set(simpleName, existingSimple);
+
+      const qualified = index.get(fn.name) || [];
+      qualified.push(fn);
+      index.set(fn.name, qualified);
     }
-    
+
     return index;
   }
 
@@ -202,8 +212,8 @@ export class FunctionExtractor {
     return this.extractors.find(ex => ex.supports(filePath));
   }
 
-  private async scanDirectory(dir: string): Promise<FunctionInfo[]> {
-    const out: FunctionInfo[] = [];
+  private async scanDirectory(dir: string): Promise<IndexUnit[]> {
+    const out: IndexUnit[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const child = path.join(dir, entry.name);
@@ -220,11 +230,11 @@ export class FunctionExtractor {
     return out;
   }
 
-  private async scanFile(filePath: string): Promise<FunctionInfo[]> {
+  private async scanFile(filePath: string): Promise<IndexUnit[]> {
     return this.tryScanSupportedFile(filePath, true);
   }
 
-  private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<FunctionInfo[]> {
+  private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<IndexUnit[]> {
     const extractor = this.extractors.find(ex => ex.supports(filePath));
     if (!extractor) {
       if (throwOnUnsupported) {
@@ -234,23 +244,15 @@ export class FunctionExtractor {
     }
     const source = await fs.readFile(filePath, "utf8");
     const rel = this.relPath(filePath);
-    const fis = await extractor.extractFromText(rel, source);
-    return fis.map(fi => {
-      const id = `${fi.name}:${fi.startLine}-${fi.endLine}`;
-      return {
-        id,
-        name: fi.name,
-        filePath: rel,
-        startLine: fi.startLine,
-        endLine: fi.endLine,
-        code: fi.code,
-        embedding: undefined,
-      };
-    });
+    const units = await extractor.extractFromText(rel, source);
+    return units.map(unit => ({
+      ...unit,
+      filePath: rel,
+      embedding: undefined,
+    }));
   }
 
   private relPath(absPath: string): string {
     return upath.normalizeTrim(upath.relative(this.root, absPath));
   }
-
 }

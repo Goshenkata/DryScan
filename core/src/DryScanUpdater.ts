@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs/promises";
 import debug from "debug";
-import { FunctionInfo } from "./types";
+import { IndexUnit } from "./types";
 import { FunctionExtractor } from "./FunctionExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { FileEntity } from "./db/entities/FileEntity";
@@ -97,18 +97,18 @@ export async function detectFileChanges(
 }
 
 /**
- * Extracts functions from a list of files.
+ * Extracts index units from a list of files.
  * Used during incremental updates.
  * 
  * @param filePaths - Array of relative file paths to extract from
  * @param functionExtractor - Function extractor instance
- * @returns Array of extracted functions
+ * @returns Array of extracted units
  */
-export async function extractFunctionsFromFiles(
+export async function extractUnitsFromFiles(
   filePaths: string[],
   functionExtractor: FunctionExtractor
-): Promise<FunctionInfo[]> {
-  const allFunctions: FunctionInfo[] = [];
+): Promise<IndexUnit[]> {
+  const allFunctions: IndexUnit[] = [];
   
   for (const relPath of filePaths) {
     const functions = await functionExtractor.scan(relPath);
@@ -167,15 +167,21 @@ export async function updateFileTracking(
  * @param fn - Function to compute embedding for
  * @returns Function with embedding populated
  */
-export async function addEmbedding(fn: FunctionInfo): Promise<FunctionInfo> {
-  const embeddings = new OllamaEmbeddings({
-    model: "embeddinggemma",
-    baseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
-  });
-  const embedding = await embeddings.embedQuery(fn.code);
-  fn.embedding = embedding;
-  return fn;
+export async function addEmbedding(fn: IndexUnit): Promise<IndexUnit> {
+  try {
+    const embeddings = new OllamaEmbeddings({
+      model: "embeddinggemma",
+      baseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
+    });
+    const embedding = await embeddings.embedQuery(fn.code);
+    fn.embedding = embedding;
+    return fn;
+  } catch (err) {
+    log("Embedding provider failed, please connect to Ollama API or Cloud AI:", err);
+    throw err;
+  }
 }
+
 
 /**
  * Performs incremental update of the DryScan index.
@@ -207,35 +213,35 @@ export async function performIncrementalUpdate(
   // Step 2: Remove old data for changed/deleted files
   const filesToRemove = [...changeSet.changed, ...changeSet.deleted];
   if (filesToRemove.length > 0) {
-    await db.removeFunctionsByFilePaths(filesToRemove);
-    log(`Removed functions from ${filesToRemove.length} files`);
+      await db.removeUnitsByFilePaths(filesToRemove);
+      log(`Removed units from ${filesToRemove.length} files`);
   }
 
   // Step 3: Extract functions from new/changed files
   const filesToProcess = [...changeSet.added, ...changeSet.changed];
   if (filesToProcess.length > 0) {
-    const newFunctions = await extractFunctionsFromFiles(filesToProcess, functionExtractor);
-    await db.saveFunctions(newFunctions);
-    log(`Extracted and saved ${newFunctions.length} functions from ${filesToProcess.length} files`);
+    const newUnits = await extractUnitsFromFiles(filesToProcess, functionExtractor);
+      await db.saveUnits(newUnits);
+      log(`Extracted and saved ${newUnits.length} units from ${filesToProcess.length} files`);
 
     // Step 4: Recompute dependencies for affected functions only
-    const allFunctions = await db.getAllFunctions();
-    const affectedFunctions = allFunctions.filter(fn => 
+      const allUnits = await db.getAllUnits();
+      const affectedUnits = allUnits.filter(fn => 
       filesToProcess.includes(fn.filePath)
     );
     const updatedWithDeps = await functionExtractor.applyInternalDependencies(
-      affectedFunctions, 
-      allFunctions
+      affectedUnits, 
+      allUnits
     );
-    await db.updateFunctions(updatedWithDeps);
-    log(`Recomputed dependencies for ${affectedFunctions.length} functions`);
+      await db.updateUnits(updatedWithDeps);
+      log(`Recomputed dependencies for ${affectedUnits.length} units`);
 
-    // Step 5: Recompute embeddings for affected functions only
+    // Step 5: Recompute embeddings for affected units only
     const updatedWithEmbeddings = await Promise.all(
       updatedWithDeps.map(fn => addEmbedding(fn))
     );
-    await db.updateFunctions(updatedWithEmbeddings);
-    log(`Recomputed embeddings for ${updatedWithEmbeddings.length} functions`);
+      await db.updateUnits(updatedWithEmbeddings);
+      log(`Recomputed embeddings for ${updatedWithEmbeddings.length} units`);
   }
 
   // Step 6: Update file tracking

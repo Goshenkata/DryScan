@@ -13,9 +13,9 @@ describe('JavaExtractor', () => {
       expect(results).to.be.an('array').that.is.empty;
     });
 
-    it('returns empty array if extractCallsFromFunction is called before extractFromText', () => {
+    it('returns empty array if extractCallsFromUnit is called before extractFromText', () => {
       const extractor = new JavaExtractor();
-      const calls = extractor.extractCallsFromFunction('SomeFile.java', 'id');
+      const calls = extractor.extractCallsFromUnit('SomeFile.java', 'id');
       expect(calls).to.be.an('array').that.is.empty;
     });
   });

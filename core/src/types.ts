@@ -1,3 +1,9 @@
+export enum IndexUnitType {
+  CLASS = "class",
+  FUNCTION = "function",
+  BLOCK = "block",
+}
+
 export interface DuplicateGroup {
   id: string;
   similarity: number;
@@ -12,14 +18,18 @@ export interface DuplicateSide {
   code: string;
 }
 
-export interface FunctionInfo {
+export interface IndexUnit {
   id: string;
   name: string;
   filePath: string;
   startLine: number;
   endLine: number;
   code: string;
-  internalFunctions?: FunctionInfo[];
+  unitType: IndexUnitType;
+  parentId?: string | null;
+  parent?: IndexUnit | null;
+  children?: IndexUnit[];
+  callDependencies?: IndexUnit[];
   embedding?: number[];
 }
 

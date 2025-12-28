@@ -2,15 +2,17 @@ import upath from "upath";
 import fs from "fs/promises";
 import path from "path";
 import debug from "debug";
-import { DuplicateGroup, EmbeddingResult, FunctionInfo } from "./types";
+import { DuplicateGroup, IndexUnit, IndexUnitType } from "./types";
 import { DRYSCAN_DIR, INDEX_DB } from "./const";
 import { defaultExtractors, FunctionExtractor } from "./FunctionExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { FileEntity } from "./db/entities/FileEntity";
 import { cosineSimilarity } from "@langchain/core/utils/math";
 import { performIncrementalUpdate, addEmbedding } from "./DryScanUpdater";
+import { indexConfig } from "./config/indexConfig";
 
 const log = debug("DryScan");
+
 
 export class DryScan {
   repoPath: string;
@@ -43,11 +45,11 @@ export class DryScan {
     await fs.mkdir(upath.dirname(dbPath), { recursive: true });
     await this.db.init(dbPath);
 
-    log("Phase 1: Extracting functions...");
-    await this.initFunctions();
-    log("Phase 2: Resolving internal dependencies...");
+    log("Phase 1: Extracting index units...");
+    await this.initUnits();
+    log("Phase 2: Resolving internal dependencies for methods...");
     await this.applyDependencies();
-    log("Phase 3: Computing embeddings...");
+    log("Phase 3: Computing embeddings for all units...");
     await this.computeEmbeddings();
     log("Phase 4: Tracking files...");
     await this.trackFiles();
@@ -87,17 +89,17 @@ export class DryScan {
   }
 
   /**
-   * Phase 1: Scans repository and extracts all functions.
-   * Saves functions to DB with internalFunctions undefined.
+  * Phase 1: Scans repository and extracts all index units.
+  * Saves units to DB.
    */
-  private async initFunctions(): Promise<void> {
+  private async initUnits(): Promise<void> {
     try {
-      const functions = await this.functionExtractor.scan(this.repoPath);
-      log(`Extracted ${functions.length} functions.`);
-      await this.db.saveFunctions(functions);
-      log("Functions saved to database.");
+      const units = await this.functionExtractor.scan(this.repoPath);
+      log(`Extracted ${units.length} index units.`);
+      await this.db.saveUnits(units);
+      log("Index units saved to database.");
     } catch (err) {
-      log("Error during function extraction:", err);
+      log("Error during unit extraction:", err);
       throw err;
     }
   }
@@ -108,11 +110,11 @@ export class DryScan {
    */
   private async applyDependencies(): Promise<void> {
     try {
-      const allFunctions = await this.db.getAllFunctions();
-      const updated = await this.functionExtractor.applyInternalDependencies(allFunctions, allFunctions);
+      const allUnits = await this.db.getAllUnits();
+      const updated = await this.functionExtractor.applyInternalDependencies(allUnits, allUnits);
       log("Resolved internal dependencies for all functions.");
-      await this.db.updateFunctions(updated);
-      log("Updated functions with dependencies in database.");
+      await this.db.updateUnits(updated);
+      log("Updated units with dependencies in database.");
     } catch (err) {
       log("Error during dependency resolution:", err);
       throw err;
@@ -122,12 +124,16 @@ export class DryScan {
   /**
    * Phase 3: Computes semantic embeddings for duplicate detection.
    */
-  private async computeEmbeddings(): Promise<void> {
+  private async computeEmbeddings(skipEmbeddings: boolean = false): Promise<void> {
+    if (skipEmbeddings) {
+      log("Skipping embedding computation by request.");
+      return;
+    }
     try {
-      const allFunctions = await this.db.getAllFunctions();
-      log(`Computing embeddings for ${allFunctions.length} functions...`);
-      const updated: FunctionInfo[] = await Promise.all(allFunctions.map(fn => addEmbedding(fn)));
-      await this.db.updateFunctions(updated);
+      const allUnits = await this.db.getAllUnits();
+      log(`Computing embeddings for ${allUnits.length} units...`);
+      const updated: IndexUnit[] = await Promise.all(allUnits.map(unit => addEmbedding(unit)));
+      await this.db.updateUnits(updated);
       log("Embeddings computed and saved.");
     } catch (err) {
       log("Error during embedding computation:", err);
@@ -141,22 +147,22 @@ export class DryScan {
    */
   private async trackFiles(): Promise<void> {
     try {
-      const allFiles = await this.functionExtractor.listSourceFiles(this.repoPath);
+      const allFunctions = await this.functionExtractor.listSourceFiles(this.repoPath);
       const fileEntities: FileEntity[] = [];
-      
-      for (const relPath of allFiles) {
+    
+      for (const relPath of allFunctions) {
         const fullPath = path.join(this.repoPath, relPath);
         const stat = await fs.stat(fullPath);
         const checksum = await this.functionExtractor.computeChecksum(fullPath);
-        
+      
         const fileEntity = new FileEntity();
         fileEntity.filePath = relPath;
         fileEntity.checksum = checksum;
         fileEntity.mtime = stat.mtimeMs;
-        
+      
         fileEntities.push(fileEntity);
       }
-      
+    
       await this.db.saveFiles(fileEntities);
       log(`Tracked ${fileEntities.length} files.`);
     } catch (err) {
@@ -174,7 +180,7 @@ export class DryScan {
    * @param threshold - Minimum similarity score (0-1) to consider functions as duplicates. Default: 0.85
    * @returns Array of duplicate groups with similarity scores
    */
-  async findDuplicates(threshold: number = 0.85): Promise<DuplicateGroup[]> {
+  async findDuplicates(threshold?: number): Promise<DuplicateGroup[]> {
     log("Finding duplicates with threshold", threshold);
     
     // Initialize database if needed
@@ -190,19 +196,19 @@ export class DryScan {
     
     // Step 2: Load all functions and filter those with embeddings
     log("Step 2: Loading functions from database...");
-    const allFunctions = await this.db.getAllFunctions();
-    const functionsWithEmbeddings = allFunctions.filter(fn => fn.embedding && fn.embedding.length > 0);
+    const allUnits = await this.db.getAllUnits();
+    const unitsWithEmbeddings = allUnits.filter(unit => unit.embedding && unit.embedding.length > 0);
     
-    log(`Comparing ${functionsWithEmbeddings.length} functions with embeddings`);
+    log(`Comparing ${unitsWithEmbeddings.length} units with embeddings`);
     
-    if (functionsWithEmbeddings.length < 2) {
-      log("Not enough functions with embeddings to compare");
+    if (unitsWithEmbeddings.length < 2) {
+      log("Not enough units with embeddings to compare");
       return [];
     }
     
     // Step 3: Compute duplicates using cosine similarity
-    log("Step 3: Computing similarity between function pairs...");
-    const duplicates = this.computeDuplicates(functionsWithEmbeddings, threshold);
+    log("Step 3: Computing similarity between unit pairs...");
+    const duplicates = this.computeDuplicates(unitsWithEmbeddings, threshold ?? indexConfig.thresholds.function);
     log(`Found ${duplicates.length} duplicate groups`);
     
     return duplicates;
@@ -216,45 +222,98 @@ export class DryScan {
    * @param threshold - Minimum similarity score to consider as duplicate
    * @returns Sorted array of duplicate groups (highest similarity first)
    */
-  private computeDuplicates(functions: FunctionInfo[], threshold: number): DuplicateGroup[] {
+  private computeDuplicates(units: IndexUnit[], fallbackThreshold: number): DuplicateGroup[] {
     const duplicates: DuplicateGroup[] = [];
-    
-    // Compare each pair of functions
-    for (let i = 0; i < functions.length; i++) {
-      for (let j = i + 1; j < functions.length; j++) {
-        const fn1 = functions[i];
-        const fn2 = functions[j];
-        
-        // Skip if either function lacks embedding
-        if (!fn1.embedding || !fn2.embedding) continue;
-        
-        // Compute cosine similarity between embeddings
-        const similarity = cosineSimilarity([fn1.embedding], [fn2.embedding])[0][0];
-        
-        // Add to duplicates if similarity exceeds threshold
-        if (similarity >= threshold) {
-          duplicates.push({
-            id: `${fn1.id}::${fn2.id}`,
-            similarity,
-            left: {
-              filePath: fn1.filePath,
-              startLine: fn1.startLine,
-              endLine: fn1.endLine,
-              code: fn1.code
-            },
-            right: {
-              filePath: fn2.filePath,
-              startLine: fn2.startLine,
-              endLine: fn2.endLine,
-              code: fn2.code
-            }
-          });
+    const byType = new Map<IndexUnitType, IndexUnit[]>();
+
+    for (const unit of units) {
+      const list = byType.get(unit.unitType) ?? [];
+      list.push(unit);
+      byType.set(unit.unitType, list);
+    }
+
+    for (const [type, typedUnits] of byType.entries()) {
+      const threshold = this.getThreshold(type, fallbackThreshold);
+
+      for (let i = 0; i < typedUnits.length; i++) {
+        for (let j = i + 1; j < typedUnits.length; j++) {
+          const left = typedUnits[i];
+          const right = typedUnits[j];
+
+          if (!left.embedding || !right.embedding) continue;
+
+          const similarity = this.computeWeightedSimilarity(left, right);
+          if (similarity >= threshold) {
+            duplicates.push({
+              id: `${left.id}::${right.id}`,
+              similarity,
+              left: {
+                filePath: left.filePath,
+                startLine: left.startLine,
+                endLine: left.endLine,
+                code: left.code,
+              },
+              right: {
+                filePath: right.filePath,
+                startLine: right.startLine,
+                endLine: right.endLine,
+                code: right.code,
+              },
+            });
+          }
         }
       }
     }
-    
-    // Sort by similarity (highest first)
+
     return duplicates.sort((a, b) => b.similarity - a.similarity);
+  }
+
+  private getThreshold(type: IndexUnitType, fallback: number): number {
+    if (type === IndexUnitType.CLASS) return indexConfig.thresholds.class;
+    if (type === IndexUnitType.BLOCK) return indexConfig.thresholds.block;
+    return indexConfig.thresholds.function ?? fallback;
+  }
+
+  private computeWeightedSimilarity(left: IndexUnit, right: IndexUnit): number {
+    if (!left.embedding || !right.embedding) return 0;
+
+    const selfSimilarity = cosineSimilarity([left.embedding], [right.embedding])[0][0];
+
+    if (left.unitType === IndexUnitType.CLASS) {
+      return selfSimilarity * indexConfig.weights.class.self;
+    }
+
+    if (left.unitType === IndexUnitType.FUNCTION) {
+      const parentClassSimilarity = this.parentSimilarity(left, right, IndexUnitType.CLASS);
+      const weights = indexConfig.weights.function;
+      return (weights.self * selfSimilarity) + (weights.parentClass * parentClassSimilarity);
+    }
+
+    // Block
+    const weights = indexConfig.weights.block;
+    const parentFuncSim = this.parentSimilarity(left, right, IndexUnitType.FUNCTION);
+    const parentClassSim = this.parentSimilarity(left, right, IndexUnitType.CLASS);
+    return (
+      weights.self * selfSimilarity +
+      weights.parentFunction * parentFuncSim +
+      weights.parentClass * parentClassSim
+    );
+  }
+
+  private parentSimilarity(left: IndexUnit, right: IndexUnit, targetType: IndexUnitType): number {
+    const leftParent = this.findParentOfType(left, targetType);
+    const rightParent = this.findParentOfType(right, targetType);
+    if (!leftParent || !rightParent || !leftParent.embedding || !rightParent.embedding) return 0;
+    return cosineSimilarity([leftParent.embedding], [rightParent.embedding])[0][0];
+  }
+
+  private findParentOfType(unit: IndexUnit, targetType: IndexUnitType): IndexUnit | null {
+    let current: IndexUnit | undefined | null = unit.parent;
+    while (current) {
+      if (current.unitType === targetType) return current;
+      current = current.parent;
+    }
+    return null;
   }
 
   private async isInitialized(): Promise<boolean> {

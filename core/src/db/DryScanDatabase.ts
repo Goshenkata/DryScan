@@ -2,13 +2,13 @@ import "reflect-metadata";
 import fs from "fs/promises";
 import upath from "upath";
 import { DataSource, Repository, In } from "typeorm";
-import { FunctionEntity } from "./entities/FunctionEntity";
 import { FileEntity } from "./entities/FileEntity";
-import { FunctionInfo } from "../types";
+import { IndexUnit } from "../types";
+import { IndexUnitEntity } from "./entities/IndexUnitEntity";
 
 export class DryScanDatabase {
   private dataSource?: DataSource;
-  private functionRepository?: Repository<FunctionEntity>;
+  private unitRepository?: Repository<IndexUnitEntity>;
   private fileRepository?: Repository<FileEntity>;
 
   isInitialized(): boolean {
@@ -21,56 +21,64 @@ export class DryScanDatabase {
     this.dataSource = new DataSource({
       type: "better-sqlite3",
       database: dbPath,
-      entities: [FunctionEntity, FileEntity],
+      entities: [IndexUnitEntity, FileEntity],
       synchronize: true,
       logging: false,
     });
 
     await this.dataSource.initialize();
-    this.functionRepository = this.dataSource.getRepository(FunctionEntity);
+    this.unitRepository = this.dataSource.getRepository(IndexUnitEntity);
     this.fileRepository = this.dataSource.getRepository(FileEntity);
   }
 
-  async saveFunction(fn: FunctionInfo): Promise<void> {
-    if (!this.functionRepository) throw new Error("Database not initialized");
-    await this.functionRepository.save(fn);
+  async saveUnit(unit: IndexUnit): Promise<void> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    await this.unitRepository.save(unit);
   }
 
-  async saveFunctions(functions: FunctionInfo[]): Promise<void> {
-    if (!this.functionRepository) throw new Error("Database not initialized");
-    await this.functionRepository.save(functions);
+  async saveUnits(units: IndexUnit[]): Promise<void> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    await this.unitRepository.save(units);
   }
 
-  async getFunction(id: string): Promise<FunctionInfo | null> {
-    if (!this.functionRepository) throw new Error("Database not initialized");
-    return this.functionRepository.findOne({ 
+  async getUnit(id: string): Promise<IndexUnit | null> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    return this.unitRepository.findOne({ 
       where: { id },
-      relations: ["internalFunctions"]
+      relations: ["callDependencies", "children", "parent"]
     });
   }
 
-  async getAllFunctions(): Promise<FunctionInfo[]> {
-    if (!this.functionRepository) throw new Error("Database not initialized");
-    return this.functionRepository.find({ relations: ["internalFunctions"] });
+  async getAllUnits(): Promise<IndexUnit[]> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    return this.unitRepository.find({ relations: ["callDependencies", "children", "parent"] });
   }
 
-  async updateFunction(fn: FunctionInfo): Promise<void> {
-    if (!this.functionRepository) throw new Error("Database not initialized");
-    await this.functionRepository.save(fn);
+  async updateUnit(unit: IndexUnit): Promise<void> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    await this.unitRepository.save(unit);
   }
 
-  async updateFunctions(functions: FunctionInfo[]): Promise<void> {
-    if (!this.functionRepository) throw new Error("Database not initialized");
-    await this.functionRepository.save(functions);
+  async updateUnits(units: IndexUnit[]): Promise<void> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    await this.unitRepository.save(units);
   }
 
   /**
-   * Removes functions by their file paths.
+   * Returns total count of indexed units.
+   */
+  async countUnits(): Promise<number> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    return this.unitRepository.count();
+  }
+
+  /**
+   * Removes index units by their file paths.
    * Used during incremental updates when files change.
    */
-  async removeFunctionsByFilePaths(filePaths: string[]): Promise<void> {
-    if (!this.functionRepository) throw new Error("Database not initialized");
-    await this.functionRepository.delete({ filePath: In(filePaths) });
+  async removeUnitsByFilePaths(filePaths: string[]): Promise<void> {
+    if (!this.unitRepository) throw new Error("Database not initialized");
+    await this.unitRepository.delete({ filePath: In(filePaths) });
   }
 
   /**

@@ -1,9 +1,9 @@
-import { FunctionInfo } from "../types";
+import { IndexUnit } from "../types";
 
 export interface LanguageExtractor {
   readonly id: string;
   readonly exts: string[];
   supports(filePath: string): boolean;
-  extractFromText(filePath: string, source: string): Promise<FunctionInfo[]>;
-  extractCallsFromFunction(filePath: string, functionId: string): string[];
+  extractFromText(filePath: string, source: string): Promise<IndexUnit[]>;
+  extractCallsFromUnit(filePath: string, unitId: string): string[];
 }

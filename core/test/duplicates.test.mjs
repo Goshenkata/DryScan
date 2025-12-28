@@ -5,7 +5,8 @@ import upath from "upath";
 import fs from "fs/promises";
 import os from "os";
 
-describe("DryScan - Duplicate Detection", () => {
+describe("DryScan - Duplicate Detection", function() {
+  this.timeout(10000);
   let testDir;
   let dryScan;
 
@@ -14,9 +15,9 @@ describe("DryScan - Duplicate Detection", () => {
     const baseDb = {
       isInitialized: () => false,
       init: async () => {},
-      getAllFunctions: async () => [],
-      saveFunctions: async () => {},
-      updateFunctions: async () => {},
+      getAllUnits: async () => [],
+      saveUnits: async () => {},
+      updateUnits: async () => {},
       saveFiles: async () => {},
     };
     return new DryScan(testDir, undefined, { ...baseDb, ...dbOverrides });
@@ -83,22 +84,22 @@ function greet(name) { return "Hello, " + name; }
     });
 
       describe("DryScan error handling and edge cases", () => {
-        it("throws and logs if initFunctions fails", async () => {
-          const error = new Error("initFunctions fail");
+        it("throws and logs if initUnits fails", async () => {
+          const error = new Error("initUnits fail");
           const stubbed = createDryScanWithStubbedDB(testDir);
-          stubbed.initFunctions = async () => { throw error; };
+          stubbed.initUnits = async () => { throw error; };
           try {
             await stubbed.init();
             throw new Error("Should have thrown");
           } catch (err) {
-            expect(err.message).to.include("initFunctions fail");
+            expect(err.message).to.include("initUnits fail");
           }
         });
 
         it("throws and logs if applyDependencies fails", async () => {
           const error = new Error("applyDependencies fail");
           const stubbed = createDryScanWithStubbedDB(testDir);
-          stubbed.initFunctions = async () => {};
+          stubbed.initUnits = async () => {};
           stubbed.applyDependencies = async () => { throw error; };
           try {
             await stubbed.init();
@@ -111,7 +112,7 @@ function greet(name) { return "Hello, " + name; }
         it("throws and logs if computeEmbeddings fails", async () => {
           const error = new Error("computeEmbeddings fail");
           const stubbed = createDryScanWithStubbedDB(testDir);
-          stubbed.initFunctions = async () => {};
+          stubbed.initUnits = async () => {};
           stubbed.applyDependencies = async () => {};
           stubbed.computeEmbeddings = async () => { throw error; };
           try {
@@ -125,7 +126,7 @@ function greet(name) { return "Hello, " + name; }
         it("throws and logs if trackFiles fails", async () => {
           const error = new Error("trackFiles fail");
           const stubbed = createDryScanWithStubbedDB(testDir);
-          stubbed.initFunctions = async () => {};
+          stubbed.initUnits = async () => {};
           stubbed.applyDependencies = async () => {};
           stubbed.computeEmbeddings = async () => {};
           stubbed.trackFiles = async () => { throw error; };
