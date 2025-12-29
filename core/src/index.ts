@@ -2,7 +2,6 @@ export { DryScan, InitOptions } from './DryScan';
 export * from './types';
 export { IndexUnitExtractor, defaultExtractors } from './IndexUnitExtractor';
 export { JavaExtractor } from './extractors/java';
-export { JavaScriptExtractor } from './extractors/javascript';
 export { FileEntity } from './db/entities/FileEntity';
 export { DryScanDatabase } from './db/DryScanDatabase';
 export * from './DryScanUpdater';

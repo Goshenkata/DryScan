@@ -220,8 +220,6 @@
   <script id="dup-data" type="application/json">{{{duplicatesJson}}}</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlightjs-line-numbers.js/2.8.0/highlightjs-line-numbers.min.js"></script>
   <script type="module">
     const dataEl = document.getElementById('dup-data');
@@ -265,8 +263,6 @@
     const languageClass = (filePath) => {
       const ext = (filePath.split('.').pop() || '').toLowerCase();
       if (ext === 'java') return 'language-java';
-      if (['ts','tsx'].includes(ext)) return 'language-typescript';
-      if (['js','jsx','mjs','cjs'].includes(ext)) return 'language-javascript';
       return 'language-plaintext';
     };
 

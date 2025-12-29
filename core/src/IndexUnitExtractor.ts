@@ -5,7 +5,6 @@ import crypto from "node:crypto";
 import debug from "debug";
 import { IndexUnit, IndexUnitType } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
-import { JavaScriptExtractor } from "./extractors/javascript";
 import { JavaExtractor } from "./extractors/java";
 import { minimatch } from "minimatch";
 import { DryConfig } from "./config/dryconfig";
@@ -16,7 +15,7 @@ const log = debug("DryScan:Extractor");
 export { LanguageExtractor } from "./extractors/LanguageExtractor";
 
 export function defaultExtractors(): LanguageExtractor[] {
-  return [new JavaScriptExtractor(), new JavaExtractor()];
+  return [new JavaExtractor()];
 }
 
 /**
