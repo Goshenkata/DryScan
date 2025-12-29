@@ -6,7 +6,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     it('throws if listSourceFiles path does not exist', async () => {
       const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       try {
-        await extractor.listSourceFiles('missing.js');
+        await extractor.listSourceFiles('missing.java');
         throw new Error('Should have thrown');
       } catch (err) {
         expect(err.message).to.include('Path not found');
@@ -16,7 +16,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     it('throws if scan path does not exist', async () => {
       const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       try {
-        await extractor.scan('missing.js');
+        await extractor.scan('missing.java');
         throw new Error('Should have thrown');
       } catch (err) {
         expect(err.message).to.include('Path not found');
@@ -49,8 +49,8 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
       const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
-        { id: 'function:helper:1-3', name: 'helper', unitType: IndexUnitType.FUNCTION, filePath: 'file.js', startLine: 1, endLine: 3, code: 'function helper() {}' },
-        { id: 'function:caller:5-7', name: 'caller', unitType: IndexUnitType.FUNCTION, filePath: 'file.js', startLine: 5, endLine: 7, code: 'function caller() { helper(); }' }
+        { id: 'function:helper:1-3', name: 'helper', unitType: IndexUnitType.FUNCTION, filePath: 'file.java', startLine: 1, endLine: 3, code: 'void helper() {}' },
+        { id: 'function:caller:5-7', name: 'caller', unitType: IndexUnitType.FUNCTION, filePath: 'file.java', startLine: 5, endLine: 7, code: 'void caller() { helper(); }' }
       ];
       
       extractor.extractors[0].extractCallsFromUnit = () => ['helper'];
@@ -67,9 +67,9 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
       const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
-        { id: 'function:helper1:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper1', filePath: 'file.js', startLine: 1, endLine: 3, code: 'function helper1() {}' },
-        { id: 'function:helper2:5-7', unitType: IndexUnitType.FUNCTION, name: 'helper2', filePath: 'file.js', startLine: 5, endLine: 7, code: 'function helper2() {}' },
-        { id: 'function:caller:9-12', unitType: IndexUnitType.FUNCTION, name: 'caller', filePath: 'file.js', startLine: 9, endLine: 12, code: 'function caller() { helper1(); helper2(); }' }
+        { id: 'function:helper1:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper1', filePath: 'file.java', startLine: 1, endLine: 3, code: 'void helper1() {}' },
+        { id: 'function:helper2:5-7', unitType: IndexUnitType.FUNCTION, name: 'helper2', filePath: 'file.java', startLine: 5, endLine: 7, code: 'void helper2() {}' },
+        { id: 'function:caller:9-12', unitType: IndexUnitType.FUNCTION, name: 'caller', filePath: 'file.java', startLine: 9, endLine: 12, code: 'void caller() { helper1(); helper2(); }' }
       ];
       
       extractor.extractors[0].extractCallsFromUnit = () => ['helper1', 'helper2'];
@@ -84,7 +84,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
       const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
-        { id: 'function:doWork:1-5', unitType: IndexUnitType.FUNCTION, name: 'doWork', filePath: 'file.js', startLine: 1, endLine: 5, code: 'function doWork() { console.log("hi"); }' }
+        { id: 'function:doWork:1-5', unitType: IndexUnitType.FUNCTION, name: 'doWork', filePath: 'file.java', startLine: 1, endLine: 5, code: 'void doWork() { System.out.println("hi"); }' }
       ];
       
       extractor.extractors[0].extractCallsFromUnit = () => ['log'];
@@ -99,9 +99,9 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
       const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
-        { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file1.js', startLine: 1, endLine: 3, code: 'function helper() {}' },
-        { id: 'function:helper:10-12', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file2.js', startLine: 10, endLine: 12, code: 'function helper() {}' },
-        { id: 'function:caller:5-7', unitType: IndexUnitType.FUNCTION, name: 'caller', filePath: 'file2.js', startLine: 5, endLine: 7, code: 'function caller() { helper(); }' }
+        { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file1.java', startLine: 1, endLine: 3, code: 'void helper() {}' },
+        { id: 'function:helper:10-12', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file2.java', startLine: 10, endLine: 12, code: 'void helper() {}' },
+        { id: 'function:caller:5-7', unitType: IndexUnitType.FUNCTION, name: 'caller', filePath: 'file2.java', startLine: 5, endLine: 7, code: 'void caller() { helper(); }' }
       ];
       
       extractor.extractors[0].extractCallsFromUnit = () => ['helper'];
@@ -109,7 +109,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
       const result = await extractor.applyInternalDependencies(allFunctions, allFunctions);
       
       const caller = result.find(f => f.name === 'caller');
-      expect(caller.callDependencies[0].filePath).to.equal('file2.js');
+      expect(caller.callDependencies[0].filePath).to.equal('file2.java');
     });
 
     it('handles Java qualified names', async () => {
@@ -120,7 +120,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
         { id: 'function:Sample.caller:5-7', unitType: IndexUnitType.FUNCTION, name: 'Sample.caller', filePath: 'Sample.java', startLine: 5, endLine: 7, code: 'public void caller() { helper(); }' }
       ];
       
-      extractor.extractors[1].extractCallsFromUnit = () => ['helper'];
+      extractor.extractors[0].extractCallsFromUnit = () => ['helper'];
       
       const result = await extractor.applyInternalDependencies(allFunctions, allFunctions);
       
@@ -133,8 +133,8 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
       const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
-        { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file.js', startLine: 1, endLine: 3, code: 'function helper() {}' },
-        { id: 'function:caller:5-7', unitType: IndexUnitType.FUNCTION, name: 'caller', filePath: 'file.js', startLine: 5, endLine: 7, code: 'function caller() { helper(); helper(); }' }
+        { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file.java', startLine: 1, endLine: 3, code: 'void helper() {}' },
+        { id: 'function:caller:5-7', unitType: IndexUnitType.FUNCTION, name: 'caller', filePath: 'file.java', startLine: 5, endLine: 7, code: 'void caller() { helper(); helper(); }' }
       ];
       
       extractor.extractors[0].extractCallsFromUnit = () => ['helper', 'helper'];

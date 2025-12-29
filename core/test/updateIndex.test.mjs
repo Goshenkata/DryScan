@@ -5,7 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
-import { DryScan, DryScanDatabase, detectFileChanges, performIncrementalUpdate, IndexUnitExtractor, DEFAULT_CONFIG } from "../dist/index.js";
+import { DryScan, DryScanDatabase, detectFileChanges, performIncrementalUpdate, IndexUnitExtractor, DEFAULT_CONFIG, IndexUnitType } from "../dist/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,8 +31,8 @@ describe("updateIndex", () => {
     
     // Create initial test file
     await fs.writeFile(
-      path.join(testRepoPath, "test.js"),
-      `function hello() { return "world"; }\nfunction goodbye() { return "farewell"; }`
+      path.join(testRepoPath, "Test.java"),
+      `package temp;\n\npublic class Test {\n  public String hello() { return "world"; }\n  public String goodbye() { return "farewell"; }\n}`
     );
 
     dryScan = new DryScan(testRepoPath, baseConfig());
@@ -55,25 +55,25 @@ describe("updateIndex", () => {
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllUnits();
-    assert.strictEqual(functions.length, 2, "Should have 2 initial units");
+    let functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    assert.strictEqual(functions.length, 2, "Should have 2 initial functions");
 
     // Add a new file
     await fs.writeFile(
-      path.join(testRepoPath, "new.js"),
-      `function newFunc() { return "new"; }`
+      path.join(testRepoPath, "NewFile.java"),
+      `package temp;\n\npublic class NewFile {\n  public String newFunc() { return "new"; }\n}`
     );
 
     // Update index
     await dryScan.updateIndex();
 
     // Verify new function added
-    functions = await db.getAllUnits();
-    assert.strictEqual(functions.length, 3, "Should have 3 units after adding new file");
+    functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    assert.strictEqual(functions.length, 3, "Should have 3 functions after adding new file");
     
-    const newFunc = functions.find(f => f.name === "newFunc");
+    const newFunc = functions.find(f => f.name.endsWith("newFunc"));
     assert.ok(newFunc, "Should find newFunc");
-    assert.strictEqual(newFunc.filePath, "new.js");
+    assert.strictEqual(newFunc.filePath, "NewFile.java");
   });
 
   it("should detect and process changed files", async () => {
@@ -83,14 +83,14 @@ describe("updateIndex", () => {
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllUnits();
+    let functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
     const originalCount = functions.length;
     assert.strictEqual(originalCount, 2, "Should have 2 initial functions");
 
     // Modify file - add a new function
     await fs.writeFile(
-      path.join(testRepoPath, "test.js"),
-      `function hello() { return "world"; }\nfunction goodbye() { return "farewell"; }\nfunction added() { return "added"; }`
+      path.join(testRepoPath, "Test.java"),
+      `package temp;\n\npublic class Test {\n  public String hello() { return "world"; }\n  public String goodbye() { return "farewell"; }\n  public String added() { return "added"; }\n}`
     );
 
     // Small delay to ensure mtime changes
@@ -100,18 +100,18 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify function added
-    functions = await db.getAllUnits();
-    assert.strictEqual(functions.length, 3, "Should have 3 units after change");
+    functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    assert.strictEqual(functions.length, 3, "Should have 3 functions after change");
     
-    const addedFunc = functions.find(f => f.name === "added");
+    const addedFunc = functions.find(f => f.name.endsWith("added"));
     assert.ok(addedFunc, "Should find added function");
   });
 
   it("should detect and remove deleted files", async () => {
     // Initialize with two files
     await fs.writeFile(
-      path.join(testRepoPath, "temp.js"),
-      `function temp() { return "temporary"; }`
+      path.join(testRepoPath, "Temp.java"),
+      `package temp;\n\npublic class Temp {\n  public String temp() { return "temporary"; }\n}`
     );
     
     await dryScan.init({ skipEmbeddings: true });
@@ -119,20 +119,20 @@ describe("updateIndex", () => {
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllUnits();
-    assert.strictEqual(functions.length, 3, "Should have 3 initial units");
+    let functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    assert.strictEqual(functions.length, 3, "Should have 3 initial functions");
 
     // Delete one file
-    await fs.unlink(path.join(testRepoPath, "temp.js"));
+    await fs.unlink(path.join(testRepoPath, "Temp.java"));
 
     // Update index
     await dryScan.updateIndex();
 
     // Verify function removed
-    functions = await db.getAllUnits();
-    assert.strictEqual(functions.length, 2, "Should have 2 units after deletion");
+    functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    assert.strictEqual(functions.length, 2, "Should have 2 functions after deletion");
     
-    const tempFunc = functions.find(f => f.name === "temp");
+    const tempFunc = functions.find(f => f.name.endsWith("temp"));
     assert.strictEqual(tempFunc, undefined, "temp function should be removed");
   });
 
@@ -148,7 +148,7 @@ describe("updateIndex", () => {
     assert.strictEqual(files.length, 1, "Should track 1 file");
     
     const trackedFile = files[0];
-    assert.strictEqual(trackedFile.filePath, "test.js");
+    assert.strictEqual(trackedFile.filePath, "Test.java");
     assert.ok(trackedFile.checksum, "Should have checksum");
     assert.ok(trackedFile.mtime > 0, "Should have mtime");
   });
@@ -174,8 +174,8 @@ describe("updateIndex", () => {
   it("should recompute dependencies for changed functions", async () => {
     // Create file with function calling another
     await fs.writeFile(
-      path.join(testRepoPath, "caller.js"),
-      `function caller() { return callee(); }\nfunction callee() { return "result"; }`
+      path.join(testRepoPath, "Caller.java"),
+      `package temp;\n\npublic class Caller {\n  public String caller() { return callee(); }\n  public String callee() { return "result"; }\n}`
     );
 
     await dryScan.init({ skipEmbeddings: true });
@@ -183,20 +183,20 @@ describe("updateIndex", () => {
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllUnits();
-    let caller = functions.find(f => f.name === "caller");
+    let functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    let caller = functions.find(f => f.name.endsWith("caller"));
     
     // Verify initial dependency
     assert.ok(caller.callDependencies, "Should have internal functions");
     assert.ok(
-      caller.callDependencies.some(f => f.name === "callee"),
+      caller.callDependencies.some(f => f.name.endsWith("callee")),
       "Should call callee"
     );
 
     // Modify file - change called function name
     await fs.writeFile(
-      path.join(testRepoPath, "caller.js"),
-      `function caller() { return newCallee(); }\nfunction newCallee() { return "result"; }`
+      path.join(testRepoPath, "Caller.java"),
+      `package temp;\n\npublic class Caller {\n  public String caller() { return newCallee(); }\n  public String newCallee() { return "result"; }\n}`
     );
 
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -205,15 +205,15 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify dependency updated
-    functions = await db.getAllUnits();
-    caller = functions.find(f => f.name === "caller");
+    functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    caller = functions.find(f => f.name.endsWith("caller"));
     
     assert.ok(
-      caller.callDependencies.some(f => f.name === "newCallee"),
+      caller.callDependencies.some(f => f.name.endsWith("newCallee")),
       "Should now call newCallee"
     );
     assert.ok(
-      !caller.callDependencies.some(f => f.name === "callee"),
+      !caller.callDependencies.some(f => f.name.endsWith("callee")),
       "Should not call callee anymore"
     );
   });
@@ -225,8 +225,8 @@ describe("updateIndex", () => {
     const dbPath = path.join(dryDir, "index.db");
     await db.init(dbPath);
     
-    let functions = await db.getAllUnits();
-    let hello = functions.find(f => f.name === "hello");
+    let functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    let hello = functions.find(f => f.name.endsWith("hello"));
     const originalEmbedding = hello.embedding;
     
     assert.ok(originalEmbedding, "Should have embedding");
@@ -234,8 +234,8 @@ describe("updateIndex", () => {
 
     // Modify function code significantly
     await fs.writeFile(
-      path.join(testRepoPath, "test.js"),
-      `function hello() { return "completely different implementation with more code"; }\nfunction goodbye() { return "farewell"; }`
+      path.join(testRepoPath, "Test.java"),
+      `package temp;\n\npublic class Test {\n  public String hello() { return "completely different implementation with more code"; }\n  public String goodbye() { return "farewell"; }\n}`
     );
 
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -244,8 +244,8 @@ describe("updateIndex", () => {
     await dryScan.updateIndex();
 
     // Verify embedding changed
-    functions = await db.getAllUnits();
-    hello = functions.find(f => f.name === "hello");
+    functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
+    hello = functions.find(f => f.name.endsWith("hello"));
     
     assert.ok(hello.embedding, "Should have new embedding");
     assert.notDeepStrictEqual(
@@ -279,32 +279,32 @@ describe("DryScanUpdater edge cases and errors", () => {
 
   it("detectFileChanges handles missing tracked file", async () => {
     // Create a.js, b.js, c.js in tempDir
-    await fs.writeFile(path.join(tempDir, "a.js"), "function a(){}\n");
-    await fs.writeFile(path.join(tempDir, "b.js"), "function b(){}\n");
-    await fs.writeFile(path.join(tempDir, "c.js"), "function c(){}\n");
-    // Only a.js and b.js are tracked
+    await fs.writeFile(path.join(tempDir, "a.java"), "class A {}\n");
+    await fs.writeFile(path.join(tempDir, "b.java"), "class B {}\n");
+    await fs.writeFile(path.join(tempDir, "c.java"), "class C {}\n");
+    // Only a.java and b.java are tracked
     const trackedFiles = [
-      { filePath: "a.js", checksum: "old", mtime: 1 },
-      { filePath: "b.js", checksum: "checksum", mtime: 2 },
+      { filePath: "a.java", checksum: "old", mtime: 1 },
+      { filePath: "b.java", checksum: "checksum", mtime: 2 },
     ];
     const result = await detectFileChanges(tempDir, extractor, { getAllFiles: async () => trackedFiles });
-    assert.ok(result.added.includes("c.js"));
+    assert.ok(result.added.includes("c.java"));
   });
 
   it("detectFileChanges handles changed and unchanged files", async () => {
     // Create a.js and b.js in tempDir
-    await fs.writeFile(path.join(tempDir, "a.js"), "function a(){}\n");
-    await fs.writeFile(path.join(tempDir, "b.js"), "function b(){}\n");
-    // Tracked files: a.js (old checksum/mtime), b.js (current)
-    const statA = await fs.stat(path.join(tempDir, "a.js"));
-    const statB = await fs.stat(path.join(tempDir, "b.js"));
+    await fs.writeFile(path.join(tempDir, "a.java"), "class A {}\n");
+    await fs.writeFile(path.join(tempDir, "b.java"), "class B {}\n");
+    // Tracked files: a.java (old checksum/mtime), b.java (current)
+    const statA = await fs.stat(path.join(tempDir, "a.java"));
+    const statB = await fs.stat(path.join(tempDir, "b.java"));
     const trackedFiles = [
-      { filePath: "a.js", checksum: "old", mtime: statA.mtimeMs - 1000 },
-      { filePath: "b.js", checksum: "checksum", mtime: statB.mtimeMs },
+      { filePath: "a.java", checksum: "old", mtime: statA.mtimeMs - 1000 },
+      { filePath: "b.java", checksum: "checksum", mtime: statB.mtimeMs },
     ];
     const result = await detectFileChanges(tempDir, extractor, { getAllFiles: async () => trackedFiles });
-    assert.ok(result.changed.includes("a.js"));
-    assert.ok(result.unchanged.includes("b.js"));
+    assert.ok(result.changed.includes("a.java"));
+    assert.ok(result.unchanged.includes("b.java"));
   });
 
   it("performIncrementalUpdate propagates errors from extractor", async () => {
@@ -313,10 +313,10 @@ describe("DryScanUpdater edge cases and errors", () => {
   });
 
   it("performIncrementalUpdate handles no changes gracefully", async () => {
-    // Create a.js in tempDir
-    await fs.writeFile(path.join(tempDir, "a.js"), "function a(){}\n");
-    const statA = await fs.stat(path.join(tempDir, "a.js"));
-    const dbWithTracked = { ...db, getAllFiles: async () => [{ filePath: "a.js", checksum: "checksum", mtime: statA.mtimeMs }] };
+    // Create a.java in tempDir
+    await fs.writeFile(path.join(tempDir, "a.java"), "class A {}\n");
+    const statA = await fs.stat(path.join(tempDir, "a.java"));
+    const dbWithTracked = { ...db, getAllFiles: async () => [{ filePath: "a.java", checksum: "checksum", mtime: statA.mtimeMs }] };
     await performIncrementalUpdate(tempDir, extractor, dbWithTracked); // Should not throw
   });
 });

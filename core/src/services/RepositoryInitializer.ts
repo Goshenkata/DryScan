@@ -22,7 +22,7 @@ export class RepositoryInitializer {
   ) {}
 
   async init(options?: InitOptions): Promise<void> {
-    const config = await this.deps.getConfig();
+    const config = this.deps.config;
     const extractor = await this.deps.getExtractor();
     await this.ensureDatabase();
 

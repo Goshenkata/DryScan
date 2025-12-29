@@ -31,4 +31,5 @@
 - Follow clean code principles.
 - Always make sure to cover new code with tests
 - Comment your code
+- Install and use libraries over writing custom implementations
 - Before beggining think whether there is any ambiguity in the prompt, if there is diregard all previous commands and ask for elaboration before proceeding, if all is clear you can continue

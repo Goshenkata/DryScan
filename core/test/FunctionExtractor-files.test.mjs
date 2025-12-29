@@ -27,12 +27,12 @@ describe("IndexUnitExtractor - File Management", () => {
   describe("listSourceFiles", () => {
     it("should list all supported source files in directory", async () => {
       // Create test files
-      await fs.writeFile(path.join(testDir, "file1.js"), "content");
+      await fs.writeFile(path.join(testDir, "file1.java"), "content");
       await fs.writeFile(path.join(testDir, "file2.java"), "content");
       await fs.writeFile(path.join(testDir, "file3.txt"), "content"); // unsupported
       
       await fs.mkdir(path.join(testDir, "subdir"), { recursive: true });
-      await fs.writeFile(path.join(testDir, "subdir", "file4.js"), "content");
+      await fs.writeFile(path.join(testDir, "subdir", "file4.java"), "content");
 
       const files = await extractor.listSourceFiles(testDir);
       
@@ -40,19 +40,19 @@ describe("IndexUnitExtractor - File Management", () => {
       files.sort();
 
       assert.strictEqual(files.length, 3, "Should find 3 supported files");
-      assert.ok(files.includes("file1.js"), "Should include file1.js");
+      assert.ok(files.includes("file1.java"), "Should include file1.java");
       assert.ok(files.includes("file2.java"), "Should include file2.java");
-      assert.ok(files.includes("subdir/file4.js"), "Should include nested file");
+      assert.ok(files.includes("subdir/file4.java"), "Should include nested file");
       assert.ok(!files.some(f => f.includes("file3.txt")), "Should not include unsupported file");
     });
 
     it("should return single file if path is a file", async () => {
-      await fs.writeFile(path.join(testDir, "single.js"), "content");
+      await fs.writeFile(path.join(testDir, "single.java"), "content");
 
-      const files = await extractor.listSourceFiles("single.js");
+      const files = await extractor.listSourceFiles("single.java");
       
       assert.strictEqual(files.length, 1, "Should return single file");
-      assert.strictEqual(files[0], "single.js");
+      assert.strictEqual(files[0], "single.java");
     });
 
     it("should return empty array for unsupported single file", async () => {
@@ -74,21 +74,21 @@ describe("IndexUnitExtractor - File Management", () => {
 
     it("should return relative paths from root", async () => {
       await fs.mkdir(path.join(testDir, "src", "components"), { recursive: true });
-      await fs.writeFile(path.join(testDir, "src", "components", "App.js"), "content");
+      await fs.writeFile(path.join(testDir, "src", "components", "App.java"), "content");
 
       const files = await extractor.listSourceFiles(testDir);
       
       assert.strictEqual(files.length, 1);
-      assert.strictEqual(files[0], "src/components/App.js", "Should use forward slashes and relative path");
+      assert.strictEqual(files[0], "src/components/App.java", "Should use forward slashes and relative path");
     });
   });
 
   describe("computeChecksum", () => {
     it("should compute MD5 checksum of file content", async () => {
       const content = "function test() { return 'hello'; }";
-      await fs.writeFile(path.join(testDir, "test.js"), content);
+      await fs.writeFile(path.join(testDir, "test.java"), content);
 
-      const checksum = await extractor.computeChecksum("test.js");
+      const checksum = await extractor.computeChecksum("test.java");
       
       assert.ok(checksum, "Should return checksum");
       assert.strictEqual(typeof checksum, "string", "Checksum should be string");
@@ -97,28 +97,28 @@ describe("IndexUnitExtractor - File Management", () => {
 
     it("should return same checksum for identical content", async () => {
       const content = "function test() { return 'hello'; }";
-      await fs.writeFile(path.join(testDir, "test1.js"), content);
-      await fs.writeFile(path.join(testDir, "test2.js"), content);
+      await fs.writeFile(path.join(testDir, "test1.java"), content);
+      await fs.writeFile(path.join(testDir, "test2.java"), content);
 
-      const checksum1 = await extractor.computeChecksum("test1.js");
-      const checksum2 = await extractor.computeChecksum("test2.js");
+      const checksum1 = await extractor.computeChecksum("test1.java");
+      const checksum2 = await extractor.computeChecksum("test2.java");
       
       assert.strictEqual(checksum1, checksum2, "Same content should produce same checksum");
     });
 
     it("should return different checksum for different content", async () => {
-      await fs.writeFile(path.join(testDir, "test1.js"), "content1");
-      await fs.writeFile(path.join(testDir, "test2.js"), "content2");
+      await fs.writeFile(path.join(testDir, "test1.java"), "content1");
+      await fs.writeFile(path.join(testDir, "test2.java"), "content2");
 
-      const checksum1 = await extractor.computeChecksum("test1.js");
-      const checksum2 = await extractor.computeChecksum("test2.js");
+      const checksum1 = await extractor.computeChecksum("test1.java");
+      const checksum2 = await extractor.computeChecksum("test2.java");
       
       assert.notStrictEqual(checksum1, checksum2, "Different content should produce different checksum");
     });
 
     it("should work with absolute paths", async () => {
       const content = "test content";
-      const filePath = path.join(testDir, "test.js");
+      const filePath = path.join(testDir, "test.java");
       await fs.writeFile(filePath, content);
 
       const checksum = await extractor.computeChecksum(filePath);
@@ -128,12 +128,12 @@ describe("IndexUnitExtractor - File Management", () => {
     });
 
     it("should detect even small content changes", async () => {
-      await fs.writeFile(path.join(testDir, "test.js"), "hello world");
-      const checksum1 = await extractor.computeChecksum("test.js");
+      await fs.writeFile(path.join(testDir, "test.java"), "hello world");
+      const checksum1 = await extractor.computeChecksum("test.java");
 
       // Change single character
-      await fs.writeFile(path.join(testDir, "test.js"), "hello World");
-      const checksum2 = await extractor.computeChecksum("test.js");
+      await fs.writeFile(path.join(testDir, "test.java"), "hello World");
+      const checksum2 = await extractor.computeChecksum("test.java");
       
       assert.notStrictEqual(checksum1, checksum2, "Should detect single character change");
     });

@@ -5,8 +5,7 @@ import { IndexUnitExtractor } from "../IndexUnitExtractor";
 export interface DryScanServiceDeps {
   repoPath: string;
   db: DryScanDatabase;
-  getConfig: () => Promise<DryConfig>;
+  config: DryConfig;
   getExtractor: () => Promise<IndexUnitExtractor>;
   ensureDb: () => Promise<void>;
-  setConfig: (config: DryConfig) => void;
 }

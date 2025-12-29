@@ -6,7 +6,7 @@ import {
   buildDuplicateReport,
   writeDuplicateReport,
   applyExclusionFromLatestReport,
-  loadDryConfig,
+  resolveDryConfig,
 } from '@dryscan/core';
 import { resolve } from 'path';
 import { DuplicateReportServer } from './uiServer.js';
@@ -106,7 +106,7 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const config = await loadDryConfig(repoPath);
+    const config = await resolveDryConfig(repoPath);
     const scanner = new DryScan(repoPath, config);
     await scanner.init();
     console.log('DryScan initialized successfully');
@@ -118,7 +118,7 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const config = await loadDryConfig(repoPath);
+    const config = await resolveDryConfig(repoPath);
     const scanner = new DryScan(repoPath, config);
     await scanner.updateIndex();
     console.log('DryScan index updated successfully');
@@ -156,7 +156,7 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const config = await loadDryConfig(repoPath);
+    const config = await resolveDryConfig(repoPath);
     const scanner = new DryScan(repoPath, config);
     const { kept, removed } = await scanner.cleanExclusions();
     console.log(`Clean complete. Kept ${kept} exclusions, removed ${removed}.`);
@@ -167,8 +167,9 @@ program.parse();
 async function handleDupesCommand(path: string, options: { json?: boolean; ui?: boolean; threshold?: string }) {
   const repoPath = resolve(path);
   const threshold = options.threshold ? parseFloat(options.threshold) : undefined;
+  const cliConfigOverrides = threshold !== undefined ? { threshold } : undefined;
 
-  const config = await loadDryConfig(repoPath);
+  const config = await resolveDryConfig(repoPath, cliConfigOverrides);
   const scanner = new DryScan(repoPath, config);
   const result = await scanner.findDuplicates(threshold);
   const displayThreshold = threshold ?? config.threshold ?? 0.85;

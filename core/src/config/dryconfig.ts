@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import upath from "upath";
+import { Validator, Schema } from "jsonschema";
 
 export interface DryConfig {
   excludedPaths: string[];
@@ -22,44 +23,44 @@ export const DEFAULT_CONFIG: DryConfig = {
   embeddingBaseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
 };
 
-function normalizeNumber(value: unknown): number | undefined {
-  if (typeof value !== "number") return undefined;
-  if (!Number.isFinite(value)) return undefined;
-  return value;
+const validator = new Validator();
+
+const partialConfigSchema: Schema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    excludedPaths: { type: "array", items: { type: "string" } },
+    excludedPairs: { type: "array", items: { type: "string" } },
+    maxLines: { type: "number" },
+    maxBlockLines: { type: "number" },
+    threshold: { type: "number" },
+    embeddingModel: { type: "string" },
+    embeddingBaseUrl: { type: "string" },
+  },
+};
+
+const fullConfigSchema: Schema = {
+  ...partialConfigSchema,
+  required: [
+    "excludedPaths",
+    "excludedPairs",
+    "maxLines",
+    "maxBlockLines",
+    "threshold",
+    "embeddingModel",
+  ],
+};
+
+function validateConfig(raw: unknown, schema: Schema, source: string): any {
+  const result = validator.validate(raw, schema);
+  if (!result.valid) {
+    const details = result.errors.map((e) => e.stack).join("; ");
+    throw new Error(`${source} config is invalid: ${details}`);
+  }
+  return raw;
 }
 
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((v) => typeof v === "string")
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
-// Normalize user-provided config to keep runtime assumptions simple and typed (arrays, numbers only).
-function normalizeConfig(raw: Partial<DryConfig>): DryConfig {
-  const maxLines = normalizeNumber(raw.maxLines);
-  const maxBlockLines = normalizeNumber(raw.maxBlockLines);
-  const threshold = normalizeNumber(raw.threshold);
-  const embeddingModel = typeof raw.embeddingModel === "string" && raw.embeddingModel.trim()
-    ? raw.embeddingModel.trim()
-    : undefined;
-  const embeddingBaseUrl = typeof raw.embeddingBaseUrl === "string" && raw.embeddingBaseUrl.trim()
-    ? raw.embeddingBaseUrl.trim()
-    : undefined;
-
-  return {
-    excludedPaths: normalizeStringArray(raw.excludedPaths),
-    excludedPairs: normalizeStringArray(raw.excludedPairs),
-    maxLines: maxLines ?? DEFAULT_CONFIG.maxLines,
-    maxBlockLines: maxBlockLines ?? DEFAULT_CONFIG.maxBlockLines,
-    threshold: threshold ?? DEFAULT_CONFIG.threshold,
-    embeddingModel: embeddingModel ?? DEFAULT_CONFIG.embeddingModel,
-    embeddingBaseUrl: embeddingBaseUrl ?? DEFAULT_CONFIG.embeddingBaseUrl,
-  };
-}
-
-export async function loadDryConfig(repoPath: string): Promise<DryConfig> {
+async function readConfigFile(repoPath: string): Promise<Partial<DryConfig>> {
   const configPath = upath.join(repoPath, ".dryconfig.json");
   try {
     const content = await fs.readFile(configPath, "utf8");
@@ -69,17 +70,35 @@ export async function loadDryConfig(repoPath: string): Promise<DryConfig> {
     } catch (parseErr) {
       throw new Error(`Invalid JSON in ${configPath}: ${(parseErr as Error).message}`);
     }
-    return { ...DEFAULT_CONFIG, ...normalizeConfig(parsed) };
+    return parsed;
   } catch (err: any) {
     if (err?.code === "ENOENT") {
-      return { ...DEFAULT_CONFIG };
+      return {};
     }
     throw err;
   }
 }
 
+/**
+ * Resolves the effective config for a repo: defaults -> file -> overrides (highest priority).
+ */
+export async function resolveDryConfig(repoPath: string, configOverrides?: Partial<DryConfig>): Promise<DryConfig> {
+  const fileConfigRaw = await readConfigFile(repoPath);
+  validateConfig(fileConfigRaw, partialConfigSchema, "Config file");
+  validateConfig(configOverrides ?? {}, partialConfigSchema, "Overrides");
+
+  const merged = { ...DEFAULT_CONFIG, ...fileConfigRaw, ...configOverrides };
+  validateConfig(merged, fullConfigSchema, "Merged");
+  return merged as DryConfig;
+}
+
+// Backwards-compatible helper used by existing callers (file + defaults).
+export async function loadDryConfig(repoPath: string, overrides?: Partial<DryConfig>): Promise<DryConfig> {
+  return resolveDryConfig(repoPath, overrides);
+}
+
 export async function saveDryConfig(repoPath: string, config: DryConfig): Promise<void> {
   const configPath = upath.join(repoPath, ".dryconfig.json");
-  const normalized = { ...DEFAULT_CONFIG, ...normalizeConfig(config) };
-  await fs.writeFile(configPath, JSON.stringify(normalized, null, 2), "utf8");
+  validateConfig(config, fullConfigSchema, "Config to save");
+  await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
 }

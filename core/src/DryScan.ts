@@ -5,7 +5,7 @@ import { DuplicateAnalysisResult } from "./types";
 import { DRYSCAN_DIR, INDEX_DB } from "./const";
 import { defaultExtractors, IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
-import { DryConfig, loadDryConfig } from "./config/dryconfig";
+import { DryConfig } from "./config/dryconfig";
 import { RepositoryInitializer, InitOptions as InitServiceOptions } from "./services/RepositoryInitializer";
 import { UpdateService } from "./services/UpdateService";
 import { DuplicateService } from "./services/DuplicateService";
@@ -21,8 +21,7 @@ export class DryScan {
   repoPath: string;
   private extractor?: IndexUnitExtractor;
   private db: DryScanDatabase;
-  private config?: DryConfig;
-  private configPromise: Promise<DryConfig>;
+  private config: DryConfig;
   private readonly services: {
     initializer: RepositoryInitializer;
     updater: UpdateService;
@@ -33,25 +32,21 @@ export class DryScan {
 
   constructor(
     repoPath: string,
-    config?: DryConfig,
+    config: DryConfig,
     extractor?: IndexUnitExtractor,
     db?: DryScanDatabase
   ) {
     this.repoPath = repoPath;
     this.config = config;
-    this.configPromise = config ? Promise.resolve(config) : loadDryConfig(repoPath);
     this.extractor = extractor;
     this.db = db ?? new DryScanDatabase();
 
     this.serviceDeps = {
       repoPath: this.repoPath,
       db: this.db,
-      getConfig: () => this.ensureConfig(),
+      config: this.config,
       getExtractor: () => this.ensureExtractor(),
       ensureDb: () => this.ensureDatabase(),
-      setConfig: (next) => {
-        this.config = next;
-      },
     };
 
     const exclusion = new ExclusionService(this.serviceDeps);
@@ -110,7 +105,7 @@ export class DryScan {
    */
   async findDuplicates(threshold?: number): Promise<DuplicateAnalysisResult> {
     log("Finding duplicates with threshold", threshold);
-    const config = await this.ensureConfig();
+    const config = this.config;
     await this.ensureExtractor();
     await this.ensureDatabase();
 
@@ -130,18 +125,8 @@ export class DryScan {
     return this.services.exclusion.cleanExclusions();
   }
 
-  private async ensureConfig(): Promise<DryConfig> {
-    if (this.config) {
-      log("Using cached config for %s", this.repoPath);
-      return this.config;
-    }
-    log("Loading config for %s", this.repoPath);
-    this.config = await this.configPromise;
-    return this.config;
-  }
-
   private async ensureExtractor(): Promise<IndexUnitExtractor> {
-    const config = await this.ensureConfig();
+    const config = this.config;
     if (!this.extractor) {
       log("Creating index unit extractor with current config");
       this.extractor = new IndexUnitExtractor(this.repoPath, config, defaultExtractors());

@@ -136,7 +136,11 @@ export async function updateFileTracking(
 ): Promise<void> {
   // Remove deleted files
   if (changeSet.deleted.length > 0) {
-    await db.removeFilesByFilePaths(changeSet.deleted);
+    if (typeof (db as any).removeFilesByFilePaths === "function") {
+      await (db as any).removeFilesByFilePaths(changeSet.deleted);
+    } else if (typeof (db as any).removeFiles === "function") {
+      await (db as any).removeFiles(changeSet.deleted);
+    }
   }
 
   // Create file entities for new and changed files

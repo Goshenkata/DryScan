@@ -7,7 +7,7 @@ export { DryScanDatabase } from './db/DryScanDatabase';
 export * from './DryScanUpdater';
 export { IndexUnitEntity } from './db/entities/IndexUnitEntity';
 export { indexConfig } from './config/indexConfig';
-export { loadDryConfig, saveDryConfig, DryConfig, DEFAULT_CONFIG } from './config/dryconfig';
+export { loadDryConfig, saveDryConfig, resolveDryConfig, DryConfig, DEFAULT_CONFIG } from './config/dryconfig';
 export {
 	pairKeyForUnits,
 	parsePairKey,

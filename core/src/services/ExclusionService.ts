@@ -8,7 +8,7 @@ export class ExclusionService {
   constructor(private readonly deps: DryScanServiceDeps) {}
 
   async cleanupExcludedFiles(): Promise<void> {
-    const config = await this.deps.getConfig();
+    const config = this.deps.config;
     if (!config.excludedPaths || config.excludedPaths.length === 0) return;
 
     const units = await this.deps.db.getAllUnits();
@@ -36,7 +36,7 @@ export class ExclusionService {
   }
 
   async cleanExclusions(): Promise<{ removed: number; kept: number }> {
-    const config = await this.deps.getConfig();
+    const config = this.deps.config;
     await this.deps.ensureDb();
     const units = await this.deps.db.getAllUnits();
 
@@ -67,7 +67,7 @@ export class ExclusionService {
 
     const nextConfig: DryConfig = { ...config, excludedPairs: kept };
     await saveDryConfig(this.deps.repoPath, nextConfig);
-    this.deps.setConfig(nextConfig);
+    this.deps.config = nextConfig;
 
     return { removed: removed.length, kept: kept.length };
   }

@@ -12,7 +12,7 @@ export class UpdateService {
   ) {}
 
   async updateIndex(): Promise<void> {
-    const config = await this.deps.getConfig();
+    const config = this.deps.config;
     const extractor = await this.deps.getExtractor();
     await this.deps.ensureDb();
 

@@ -13,7 +13,10 @@ import { FILE_CHECKSUM_ALGO } from "./const";
 const log = debug("DryScan:Extractor");
 
 export { LanguageExtractor } from "./extractors/LanguageExtractor";
-
+/**
+ * Returns the default set of language extractors supported by DryScan.
+ * Extend/override by passing custom extractors into the IndexUnitExtractor constructor.
+ */
 export function defaultExtractors(): LanguageExtractor[] {
   return [new JavaExtractor()];
 }
@@ -24,7 +27,7 @@ export function defaultExtractors(): LanguageExtractor[] {
  */
 export class IndexUnitExtractor {
   private readonly root: string;
-  private readonly extractors: LanguageExtractor[];
+  readonly extractors: LanguageExtractor[];
   private config: DryConfig;
 
   constructor(
@@ -38,6 +41,10 @@ export class IndexUnitExtractor {
     log("Initialized extractor for %s", this.root);
   }
 
+  /**
+   * Updates the extractor configuration (e.g., exclusion globs).
+   * Callers can change config between runs without re-creating the extractor.
+   */
   setConfig(config: DryConfig): void {
     this.config = config;
     log("Extractor config updated");
@@ -113,6 +120,10 @@ export class IndexUnitExtractor {
     return crypto.createHash(FILE_CHECKSUM_ALGO).update(content).digest("hex");
   }
 
+  /**
+   * Scans a file or directory and extracts indexable units using the matching LanguageExtractor.
+   * The returned units have repo-relative file paths and no embedding attached.
+   */
   async scan(targetPath: string): Promise<IndexUnit[]> {
     const fullPath = path.isAbsolute(targetPath)
       ? targetPath
@@ -145,6 +156,10 @@ export class IndexUnitExtractor {
     });
   }
 
+  /**
+   * Enriches a single FUNCTION unit by resolving its call sites into references
+   * to other locally-indexed FUNCTION units (best-effort, name-based resolution).
+   */
   private applyInternalDependenciesToFunction(fn: IndexUnit, nameIndex: Map<string, IndexUnit[]>): IndexUnit {
     const extractor = this.findExtractor(fn.filePath);
     if (!extractor) return fn;
@@ -166,6 +181,10 @@ export class IndexUnitExtractor {
     return { ...fn, callDependencies: functionRefs };
   }
 
+  /**
+   * Resolves extracted call names to known local functions, preferring same-file definitions.
+   * De-duplicates resolved functions to avoid repeated dependencies.
+   */
   private resolveInternalCalls(callNames: string[], nameIndex: Map<string, IndexUnit[]>, currentFile: string): IndexUnit[] {
     const resolved: IndexUnit[] = [];
     const seen = new Set<string>();
@@ -182,6 +201,10 @@ export class IndexUnitExtractor {
     return resolved;
   }
 
+  /**
+   * Chooses the "best" candidate function for a call when multiple definitions share a name.
+   * Current heuristic: prefer same-file; otherwise take the first indexed candidate.
+   */
   private findBestMatch(candidates: IndexUnit[], currentFile: string): IndexUnit | null {
     if (candidates.length === 0) return null;
 
@@ -191,6 +214,10 @@ export class IndexUnitExtractor {
     return candidates[0];
   }
 
+  /**
+   * Builds a lookup index from function names to candidate FUNCTION units.
+   * Stores both the fully-qualified name and a "simple" last-segment variant (e.g. a.b.c -> c).
+   */
   private buildNameIndex(functions: IndexUnit[]): Map<string, IndexUnit[]> {
     const index = new Map<string, IndexUnit[]>();
 
@@ -208,15 +235,24 @@ export class IndexUnitExtractor {
     return index;
   }
 
+  /**
+   * Extracts the last segment of a dotted/qualified function name.
+   */
   private extractSimpleName(fullName: string): string {
     const parts = fullName.split(".");
     return parts[parts.length - 1];
   }
 
+  /**
+   * Finds the language extractor responsible for a given file path, if any.
+   */
   private findExtractor(filePath: string): LanguageExtractor | undefined {
     return this.extractors.find(ex => ex.supports(filePath));
   }
 
+  /**
+   * Scans a directory recursively, extracting units from supported files while honoring exclusions.
+   */
   private async scanDirectory(dir: string): Promise<IndexUnit[]> {
     const out: IndexUnit[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -240,10 +276,17 @@ export class IndexUnitExtractor {
     return out;
   }
 
+  /**
+   * Scans a single file and extracts supported units.
+   */
   private async scanFile(filePath: string): Promise<IndexUnit[]> {
     return this.tryScanSupportedFile(filePath, true);
   }
 
+  /**
+   * Extracts units from a supported file.
+   * Optionally throws when the file type is unsupported (used when scanning an explicit file).
+   */
   private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<IndexUnit[]> {
     const extractor = this.extractors.find(ex => ex.supports(filePath));
     if (!extractor) {
@@ -267,10 +310,17 @@ export class IndexUnitExtractor {
     }));
   }
 
+  /**
+   * Converts an absolute path to a repo-relative, normalized (POSIX-style) path.
+   * This keeps paths stable across platforms and consistent in the index/DB.
+   */
   private relPath(absPath: string): string {
     return upath.normalizeTrim(upath.relative(this.root, absPath));
   }
 
+  /**
+   * Returns true if a repo-relative path matches any configured exclusion glob.
+   */
   private shouldExclude(relPath: string): boolean {
     const patterns = this.config.excludedPaths || [];
     if (patterns.length === 0) return false;
