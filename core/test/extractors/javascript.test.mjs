@@ -1,15 +1,16 @@
 import { expect } from 'chai';
 import path from 'path';
 import fs from 'fs/promises';
-import { JavaScriptExtractor } from '../../dist/index.js';
+import { JavaScriptExtractor, DEFAULT_CONFIG } from '../../dist/index.js';
 
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 
 describe('JavaScriptExtractor', () => {
+  const config = { ...DEFAULT_CONFIG, maxLines: 1000, maxBlockLines: 1000 };
   describe('Error handling and edge cases', () => {
     it('returns empty array if extractFromText is called with empty source', async () => {
       const extractor = new JavaScriptExtractor();
-      const results = await extractor.extractFromText('Empty.js', '');
+      const results = await extractor.extractFromText('Empty.js', '', config);
       expect(results).to.be.an('array').that.is.empty;
     });
 
@@ -35,7 +36,7 @@ describe('JavaScriptExtractor', () => {
     const file = path.join(resourcesDir, 'sample.js');
     const source = await fs.readFile(file, 'utf8');
     const extractor = new JavaScriptExtractor();
-    const results = await extractor.extractFromText(file, source);
+    const results = await extractor.extractFromText(file, source, config);
     const names = results.map(r => r.name).sort();
 
     expect(names.some(n => n === 'add' || n.endsWith('.add'))).to.equal(true);

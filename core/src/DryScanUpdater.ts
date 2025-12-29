@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs/promises";
 import debug from "debug";
 import { IndexUnit } from "./types";
-import { FunctionExtractor } from "./FunctionExtractor";
+import { IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { FileEntity } from "./db/entities/FileEntity";
 import { OllamaEmbeddings } from "@langchain/ollama";
@@ -39,17 +39,17 @@ export interface FileChangeSet {
  * Uses mtime as fast check, then checksum for verification.
  * 
  * @param repoPath - Root path of the repository
- * @param functionExtractor - Function extractor instance for file operations
+ * @param extractor - Index unit extractor instance for file operations
  * @param db - Database instance for retrieving tracked files
  * @returns Change set with categorized file paths
  */
 export async function detectFileChanges(
   repoPath: string,
-  functionExtractor: FunctionExtractor,
+  extractor: IndexUnitExtractor,
   db: DryScanDatabase
 ): Promise<FileChangeSet> {
   // Get current files in repository
-  const currentFiles = await functionExtractor.listSourceFiles(repoPath);
+  const currentFiles = await extractor.listSourceFiles(repoPath);
   const currentFileSet = new Set(currentFiles);
 
   // Get tracked files from database
@@ -76,7 +76,7 @@ export async function detectFileChanges(
     
     if (stat.mtimeMs !== tracked.mtime) {
       // Mtime changed, verify with checksum
-      const currentChecksum = await functionExtractor.computeChecksum(fullPath);
+      const currentChecksum = await extractor.computeChecksum(fullPath);
       if (currentChecksum !== tracked.checksum) {
         changed.push(filePath);
       } else {
@@ -101,17 +101,17 @@ export async function detectFileChanges(
  * Used during incremental updates.
  * 
  * @param filePaths - Array of relative file paths to extract from
- * @param functionExtractor - Function extractor instance
+ * @param extractor - Index unit extractor instance
  * @returns Array of extracted units
  */
 export async function extractUnitsFromFiles(
   filePaths: string[],
-  functionExtractor: FunctionExtractor
+  extractor: IndexUnitExtractor
 ): Promise<IndexUnit[]> {
   const allFunctions: IndexUnit[] = [];
   
   for (const relPath of filePaths) {
-    const functions = await functionExtractor.scan(relPath);
+    const functions = await extractor.scan(relPath);
     allFunctions.push(...functions);
   }
   
@@ -124,13 +124,13 @@ export async function extractUnitsFromFiles(
  * 
  * @param changeSet - Set of file changes to apply
  * @param repoPath - Root path of the repository
- * @param functionExtractor - Function extractor for checksum computation
+ * @param extractor - Index unit extractor for checksum computation
  * @param db - Database instance for file tracking
  */
 export async function updateFileTracking(
   changeSet: FileChangeSet,
   repoPath: string,
-  functionExtractor: FunctionExtractor,
+  extractor: IndexUnitExtractor,
   db: DryScanDatabase
 ): Promise<void> {
   // Remove deleted files
@@ -146,7 +146,7 @@ export async function updateFileTracking(
     for (const relPath of filesToTrack) {
       const fullPath = path.join(repoPath, relPath);
       const stat = await fs.stat(fullPath);
-      const checksum = await functionExtractor.computeChecksum(fullPath);
+      const checksum = await extractor.computeChecksum(fullPath);
       
       const fileEntity = new FileEntity();
       fileEntity.filePath = relPath;
@@ -188,18 +188,18 @@ export async function addEmbedding(fn: IndexUnit): Promise<IndexUnit> {
  * Detects file changes and reprocesses only affected files.
  * 
  * @param repoPath - Root path of the repository
- * @param functionExtractor - Function extractor instance
+ * @param extractor - Index unit extractor instance
  * @param db - Database instance (must be initialized)
  */
 export async function performIncrementalUpdate(
   repoPath: string,
-  functionExtractor: FunctionExtractor,
+  extractor: IndexUnitExtractor,
   db: DryScanDatabase
 ): Promise<void> {
   log("Starting incremental update");
   
   // Step 1: Detect changes
-  const changeSet = await detectFileChanges(repoPath, functionExtractor, db);
+  const changeSet = await detectFileChanges(repoPath, extractor, db);
   
   if (changeSet.changed.length === 0 && 
       changeSet.added.length === 0 && 
@@ -220,7 +220,7 @@ export async function performIncrementalUpdate(
   // Step 3: Extract functions from new/changed files
   const filesToProcess = [...changeSet.added, ...changeSet.changed];
   if (filesToProcess.length > 0) {
-    const newUnits = await extractUnitsFromFiles(filesToProcess, functionExtractor);
+    const newUnits = await extractUnitsFromFiles(filesToProcess, extractor);
       await db.saveUnits(newUnits);
       log(`Extracted and saved ${newUnits.length} units from ${filesToProcess.length} files`);
 
@@ -229,7 +229,7 @@ export async function performIncrementalUpdate(
       const affectedUnits = allUnits.filter(fn => 
       filesToProcess.includes(fn.filePath)
     );
-    const updatedWithDeps = await functionExtractor.applyInternalDependencies(
+    const updatedWithDeps = await extractor.applyInternalDependencies(
       affectedUnits, 
       allUnits
     );
@@ -245,6 +245,6 @@ export async function performIncrementalUpdate(
   }
 
   // Step 6: Update file tracking
-  await updateFileTracking(changeSet, repoPath, functionExtractor, db);
+  await updateFileTracking(changeSet, repoPath, extractor, db);
   log("Incremental update complete");
 }

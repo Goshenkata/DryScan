@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import path from 'path';
 import fs from 'fs/promises';
-import { JavaExtractor, IndexUnitType } from '../../dist/index.js';
+import { JavaExtractor, IndexUnitType, DEFAULT_CONFIG } from '../../dist/index.js';
 
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 
@@ -9,6 +9,7 @@ describe('JavaExtractor - Call Extraction', () => {
   let extractor;
   let file;
   let source;
+  const config = { ...DEFAULT_CONFIG, maxLines: 1000, maxBlockLines: 1000 };
 
   before(async () => {
     file = path.join(resourcesDir, 'CallerSample.java');
@@ -17,7 +18,7 @@ describe('JavaExtractor - Call Extraction', () => {
   });
 
   it('extracts method calls from callsHelper', async () => {
-    const units = await extractor.extractFromText(file, source);
+    const units = await extractor.extractFromText(file, source, config);
     const fn = units.find(u => u.name === 'CallerSample.callsHelper' && u.unitType === IndexUnitType.FUNCTION);
     expect(fn).to.exist;
     const calls = extractor.extractCallsFromUnit(file, fn.id);
@@ -26,7 +27,7 @@ describe('JavaExtractor - Call Extraction', () => {
   });
 
   it('extracts multiple method calls from callsMultiple', async () => {
-    const units = await extractor.extractFromText(file, source);
+    const units = await extractor.extractFromText(file, source, config);
     const fn = units.find(u => u.name === 'CallerSample.callsMultiple' && u.unitType === IndexUnitType.FUNCTION);
     expect(fn).to.exist;
     const calls = extractor.extractCallsFromUnit(file, fn.id);
@@ -36,7 +37,7 @@ describe('JavaExtractor - Call Extraction', () => {
   });
 
   it('returns empty array for method with no calls', async () => {
-    const units = await extractor.extractFromText(file, source);
+    const units = await extractor.extractFromText(file, source, config);
     const fn = units.find(u => u.name === 'CallerSample.standalone' && u.unitType === IndexUnitType.FUNCTION);
     expect(fn).to.exist;
     const calls = extractor.extractCallsFromUnit(file, fn.id);

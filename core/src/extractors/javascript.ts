@@ -3,6 +3,7 @@ import Parser from "tree-sitter";
 import JavaScript from "tree-sitter-javascript";
 import { IndexUnit, IndexUnitType } from "../types";
 import { LanguageExtractor } from "./LanguageExtractor";
+import { DryConfig } from "../config/dryconfig";
 import { indexConfig } from "../config/indexConfig";
 import { isTrivialFunctionUnit, TrivialityRules } from "./triviality";
 
@@ -42,7 +43,7 @@ export class JavaScriptExtractor implements LanguageExtractor {
     return this.exts.some(ext => lower.endsWith(ext));
   }
 
-  async extractFromText(file: string, source: string): Promise<IndexUnit[]> {
+  async extractFromText(file: string, source: string, config: DryConfig): Promise<IndexUnit[]> {
     if (!source.trim()) return [];
 
     const tree = this.parser.parse(source);
@@ -56,6 +57,8 @@ export class JavaScriptExtractor implements LanguageExtractor {
         const name = this.getName(node, source) || "<anonymous>";
         const startLine = node.startPosition.row + 1;
         const endLine = node.endPosition.row + 1;
+        const classLength = endLine - startLine + 1;
+        const skipClass = config.maxLines && classLength > config.maxLines;
         const id = this.buildId(IndexUnitType.CLASS, name, startLine, endLine);
         const classUnit: IndexUnit = {
           id,
@@ -67,11 +70,13 @@ export class JavaScriptExtractor implements LanguageExtractor {
           unitType: IndexUnitType.CLASS,
           children: [],
         };
-        units.push(classUnit);
+        if (!skipClass) {
+          units.push(classUnit);
+        }
 
         for (let i = 0; i < node.namedChildCount; i++) {
           const child = node.namedChild(i);
-          if (child) visit(child, classUnit);
+          if (child) visit(child, skipClass ? undefined : classUnit);
         }
         return;
       }
@@ -83,8 +88,10 @@ export class JavaScriptExtractor implements LanguageExtractor {
         type === "arrow_function"
       ) {
         const fnUnit = this.buildFunctionUnit(node, source, file, currentClass);
+        const fnLength = fnUnit.endLine - fnUnit.startLine + 1;
+        const skipFunction = config.maxLines && fnLength > config.maxLines;
         // Skip trivial accessors/one-liners to reduce false-positive duplicates.
-        if (isTrivialFunctionUnit(fnUnit, jsTrivialityRules)) {
+        if (skipFunction || isTrivialFunctionUnit(fnUnit, jsTrivialityRules)) {
           return;
         }
         units.push(fnUnit);
@@ -92,7 +99,7 @@ export class JavaScriptExtractor implements LanguageExtractor {
 
         const bodyNode = this.getBodyNode(node);
         if (bodyNode) {
-          const blocks = this.extractBlocks(bodyNode, source, file, fnUnit);
+          const blocks = this.extractBlocks(bodyNode, source, file, fnUnit, config);
           units.push(...blocks);
         }
       }
@@ -192,7 +199,8 @@ export class JavaScriptExtractor implements LanguageExtractor {
     bodyNode: Parser.SyntaxNode,
     source: string,
     file: string,
-    parentFunction: IndexUnit
+    parentFunction: IndexUnit,
+    config: DryConfig
   ): IndexUnit[] {
     const blocks: IndexUnit[] = [];
 
@@ -201,7 +209,8 @@ export class JavaScriptExtractor implements LanguageExtractor {
         const startLine = n.startPosition.row + 1;
         const endLine = n.endPosition.row + 1;
         const lineCount = endLine - startLine + 1;
-        if (lineCount >= indexConfig.blockMinLines) {
+        const withinLimits = !config.maxBlockLines || lineCount <= config.maxBlockLines;
+        if (lineCount >= indexConfig.blockMinLines && withinLimits) {
           const id = this.buildId(IndexUnitType.BLOCK, parentFunction.name, startLine, endLine);
           const blockUnit: IndexUnit = {
             id,

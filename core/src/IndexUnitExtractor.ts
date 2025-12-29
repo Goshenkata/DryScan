@@ -2,10 +2,15 @@ import fs from "fs/promises";
 import path from "path";
 import upath from "upath";
 import crypto from "node:crypto";
+import debug from "debug";
 import { IndexUnit, IndexUnitType } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
 import { JavaScriptExtractor } from "./extractors/javascript";
 import { JavaExtractor } from "./extractors/java";
+import { minimatch } from "minimatch";
+import { DryConfig } from "./config/dryconfig";
+
+const log = debug("DryScan:Extractor");
 
 export { LanguageExtractor } from "./extractors/LanguageExtractor";
 
@@ -13,23 +18,40 @@ export function defaultExtractors(): LanguageExtractor[] {
   return [new JavaScriptExtractor(), new JavaExtractor()];
 }
 
-export class FunctionExtractor {
+/**
+ * Extracts and indexes code units (classes, functions, blocks) for a repository.
+ * Owns shared file-system helpers and delegates language-specific parsing to LanguageExtractors.
+ */
+export class IndexUnitExtractor {
   private readonly root: string;
   private readonly extractors: LanguageExtractor[];
+  private config: DryConfig;
 
-  constructor(rootPath: string, extractors: LanguageExtractor[] = defaultExtractors()) {
+  constructor(
+    rootPath: string,
+    config: DryConfig,
+    extractors: LanguageExtractor[] = defaultExtractors()
+  ) {
     this.root = rootPath;
     this.extractors = extractors;
+    this.config = config;
+    log("Initialized extractor for %s", this.root);
+  }
+
+  setConfig(config: DryConfig): void {
+    this.config = config;
+    log("Extractor config updated");
   }
 
   /**
-   * Lists all supported source files in a directory recursively.
-   * Only returns files that have a matching extractor.
+   * Lists all supported source files from a path. Honors exclusion globs from config.
    */
   async listSourceFiles(dirPath: string): Promise<string[]> {
     const fullPath = path.isAbsolute(dirPath)
       ? dirPath
       : path.join(this.root, dirPath);
+
+    log("Listing source files under %s", fullPath);
 
     const stat = await fs.stat(fullPath).catch(() => null);
     if (!stat) {
@@ -37,48 +59,56 @@ export class FunctionExtractor {
     }
 
     if (stat.isFile()) {
-      // Single file: check if supported
       const supported = this.extractors.some(ex => ex.supports(fullPath));
-      return supported ? [this.relPath(fullPath)] : [];
+      const rel = this.relPath(fullPath);
+      if (this.shouldExclude(rel)) {
+        log("Skipping excluded file %s", rel);
+        return [];
+      }
+      return supported ? [rel] : [];
     }
 
-    // Directory: recursively list all supported files
     return this.listSourceFilesInDirectory(fullPath);
   }
 
   /**
-   * Recursively lists all supported source files in a directory.
+   * Recursively walks a directory and collects supported files.
    */
   private async listSourceFilesInDirectory(dir: string): Promise<string[]> {
     const files: string[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    
+
     for (const entry of entries) {
       const child = path.join(dir, entry.name);
-      
+      const relChild = this.relPath(child);
+
+      if (this.shouldExclude(relChild)) {
+        log("Skipping excluded path %s", relChild);
+        continue;
+      }
+
       if (entry.isDirectory()) {
         const nested = await this.listSourceFilesInDirectory(child);
         files.push(...nested);
       } else if (entry.isFile()) {
         const supported = this.extractors.some(ex => ex.supports(child));
         if (supported) {
-          files.push(this.relPath(child));
+          files.push(relChild);
         }
       }
     }
-    
+
     return files;
   }
 
   /**
-   * Computes MD5 checksum of file content.
-   * Used to detect file changes during incremental updates.
+   * Computes MD5 checksum of file content to track changes.
    */
   async computeChecksum(filePath: string): Promise<string> {
     const fullPath = path.isAbsolute(filePath)
       ? filePath
       : path.join(this.root, filePath);
-    
+
     const content = await fs.readFile(fullPath, "utf8");
     return crypto.createHash("md5").update(content).digest("hex");
   }
@@ -94,6 +124,7 @@ export class FunctionExtractor {
     }
 
     if (stat.isDirectory()) {
+      log("Scanning directory %s", fullPath);
       return this.scanDirectory(fullPath);
     }
 
@@ -101,14 +132,10 @@ export class FunctionExtractor {
   }
 
   /**
-  * Resolves and applies internal dependencies for a set of functions.
-  * This is the main entry point for Phase 2 of the analysis.
-  * 
-  * @param units - Units to process
-  * @param allUnits - Complete unit index for name lookup
-  * @returns Units with callDependencies populated on functions
+   * Resolves and applies internal dependencies for a set of functions (Phase 2).
    */
   async applyInternalDependencies(units: IndexUnit[], allUnits: IndexUnit[]): Promise<IndexUnit[]> {
+    log("Resolving internal dependencies for %d units", units.length);
     const functions = allUnits.filter(u => u.unitType === IndexUnitType.FUNCTION);
     const nameIndex = this.buildNameIndex(functions);
 
@@ -118,10 +145,6 @@ export class FunctionExtractor {
     });
   }
 
-  /**
-   * Applies internal dependencies to a single function (partial operation).
-   * Extracts call expressions from the function's AST and resolves them to local functions.
-   */
   private applyInternalDependenciesToFunction(fn: IndexUnit, nameIndex: Map<string, IndexUnit[]>): IndexUnit {
     const extractor = this.findExtractor(fn.filePath);
     if (!extractor) return fn;
@@ -143,10 +166,6 @@ export class FunctionExtractor {
     return { ...fn, callDependencies: functionRefs };
   }
 
-  /**
-   * Resolves call names to actual local functions using the name index.
-   * Filters out library/external calls (not in index) and deduplicates.
-   */
   private resolveInternalCalls(callNames: string[], nameIndex: Map<string, IndexUnit[]>, currentFile: string): IndexUnit[] {
     const resolved: IndexUnit[] = [];
     const seen = new Set<string>();
@@ -163,25 +182,15 @@ export class FunctionExtractor {
     return resolved;
   }
 
-  /**
-   * Finds the best matching function from candidates.
-   * Prefers same-file matches to handle name collisions.
-   */
   private findBestMatch(candidates: IndexUnit[], currentFile: string): IndexUnit | null {
     if (candidates.length === 0) return null;
-    
-    // Prefer functions in the same file
+
     const sameFile = candidates.find(c => c.filePath === currentFile);
     if (sameFile) return sameFile;
-    
-    // Fallback to first candidate
+
     return candidates[0];
   }
 
-  /**
-   * Builds a name-based index for fast function lookup.
-   * Extracts simple names from qualified names (e.g., "Sample.helper" -> "helper").
-   */
   private buildNameIndex(functions: IndexUnit[]): Map<string, IndexUnit[]> {
     const index = new Map<string, IndexUnit[]>();
 
@@ -199,10 +208,6 @@ export class FunctionExtractor {
     return index;
   }
 
-  /**
-   * Extracts the simple name from a qualified name.
-   * E.g., "Sample.helper" -> "helper", "helper" -> "helper"
-   */
   private extractSimpleName(fullName: string): string {
     const parts = fullName.split(".");
     return parts[parts.length - 1];
@@ -217,6 +222,11 @@ export class FunctionExtractor {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const child = path.join(dir, entry.name);
+      const relChild = this.relPath(child);
+      if (this.shouldExclude(relChild)) {
+        log("Skipping excluded path %s", relChild);
+        continue;
+      }
       if (entry.isDirectory()) {
         const nested = await this.scanDirectory(child);
         out.push(...nested);
@@ -242,9 +252,14 @@ export class FunctionExtractor {
       }
       return [];
     }
-    const source = await fs.readFile(filePath, "utf8");
     const rel = this.relPath(filePath);
-    const units = await extractor.extractFromText(rel, source);
+    if (this.shouldExclude(rel)) {
+      log("Skipping excluded file %s", rel);
+      return [];
+    }
+    const source = await fs.readFile(filePath, "utf8");
+    const units = await extractor.extractFromText(rel, source, this.config);
+    log("Extracted %d units from %s", units.length, rel);
     return units.map(unit => ({
       ...unit,
       filePath: rel,
@@ -254,5 +269,11 @@ export class FunctionExtractor {
 
   private relPath(absPath: string): string {
     return upath.normalizeTrim(upath.relative(this.root, absPath));
+  }
+
+  private shouldExclude(relPath: string): boolean {
+    const patterns = this.config.excludedPaths || [];
+    if (patterns.length === 0) return false;
+    return patterns.some((pattern) => minimatch(relPath, pattern, { dot: true }));
   }
 }

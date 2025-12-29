@@ -4,12 +4,15 @@ import path from "path";
 import debug from "debug";
 import { DuplicateGroup, DuplicateAnalysisResult, DuplicationScore, IndexUnit, IndexUnitType } from "./types";
 import { DRYSCAN_DIR, INDEX_DB } from "./const";
-import { defaultExtractors, FunctionExtractor } from "./FunctionExtractor";
+import { defaultExtractors, IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { FileEntity } from "./db/entities/FileEntity";
 import { cosineSimilarity } from "@langchain/core/utils/math";
 import { performIncrementalUpdate, addEmbedding } from "./DryScanUpdater";
 import { indexConfig } from "./config/indexConfig";
+import { DryConfig, loadDryConfig, saveDryConfig } from "./config/dryconfig";
+import { pairKeyForUnits, parsePairKey, pairKeyMatches, ParsedPairKey } from "./pairs";
+import { minimatch } from "minimatch";
 
 const log = debug("DryScan");
 
@@ -20,16 +23,21 @@ export interface InitOptions {
 
 export class DryScan {
   repoPath: string;
-  private functionExtractor: FunctionExtractor;
+  private extractor?: IndexUnitExtractor;
   private db: DryScanDatabase;
+  private config?: DryConfig;
+  private configPromise: Promise<DryConfig>;
 
   constructor(
     repoPath: string,
-    functionExtractor?: FunctionExtractor,
+    config?: DryConfig,
+    extractor?: IndexUnitExtractor,
     db?: DryScanDatabase
   ) {
     this.repoPath = repoPath;
-    this.functionExtractor = functionExtractor ?? new FunctionExtractor(repoPath, defaultExtractors());
+    this.config = config;
+    this.configPromise = config ? Promise.resolve(config) : loadDryConfig(repoPath);
+    this.extractor = extractor;
     this.db = db ?? new DryScanDatabase();
   }
 
@@ -45,6 +53,8 @@ export class DryScan {
       log("Repository already initialized.");
       return;
     }
+    const config = await this.ensureConfig();
+    await this.ensureExtractor();
     const dbPath = upath.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
     await fs.mkdir(upath.dirname(dbPath), { recursive: true });
     await this.db.init(dbPath);
@@ -57,6 +67,7 @@ export class DryScan {
     await this.computeEmbeddings(options?.skipEmbeddings === true);
     log("Phase 4: Tracking files...");
     await this.trackFiles();
+    await this.cleanupExcludedFiles(config);
     log("DryScan initialization complete.");
   }
 
@@ -76,6 +87,8 @@ export class DryScan {
    */
   async updateIndex(): Promise<void> {
     log("Updating DryScan index at", this.repoPath);
+    const config = await this.ensureConfig();
+    const extractor = await this.ensureExtractor();
     
     // Ensure DB is initialized
     if (!this.db.isInitialized()) {
@@ -84,7 +97,8 @@ export class DryScan {
     }
 
     try {
-      await performIncrementalUpdate(this.repoPath, this.functionExtractor, this.db);
+      await performIncrementalUpdate(this.repoPath, extractor, this.db);
+      await this.cleanupExcludedFiles(config);
       log("Index update complete.");
     } catch (err) {
       log("Error during index update:", err);
@@ -98,7 +112,8 @@ export class DryScan {
    */
   private async initUnits(): Promise<void> {
     try {
-      const units = await this.functionExtractor.scan(this.repoPath);
+      const extractor = await this.ensureExtractor();
+      const units = await extractor.scan(this.repoPath);
       log(`Extracted ${units.length} index units.`);
       await this.db.saveUnits(units);
       log("Index units saved to database.");
@@ -115,7 +130,8 @@ export class DryScan {
   private async applyDependencies(): Promise<void> {
     try {
       const allUnits = await this.db.getAllUnits();
-      const updated = await this.functionExtractor.applyInternalDependencies(allUnits, allUnits);
+      const extractor = await this.ensureExtractor();
+      const updated = await extractor.applyInternalDependencies(allUnits, allUnits);
       log("Resolved internal dependencies for all functions.");
       await this.db.updateUnits(updated);
       log("Updated units with dependencies in database.");
@@ -151,13 +167,14 @@ export class DryScan {
    */
   private async trackFiles(): Promise<void> {
     try {
-      const allFunctions = await this.functionExtractor.listSourceFiles(this.repoPath);
+      const extractor = await this.ensureExtractor();
+      const allFunctions = await extractor.listSourceFiles(this.repoPath);
       const fileEntities: FileEntity[] = [];
     
       for (const relPath of allFunctions) {
         const fullPath = path.join(this.repoPath, relPath);
         const stat = await fs.stat(fullPath);
-        const checksum = await this.functionExtractor.computeChecksum(fullPath);
+        const checksum = await extractor.computeChecksum(fullPath);
       
         const fileEntity = new FileEntity();
         fileEntity.filePath = relPath;
@@ -186,6 +203,8 @@ export class DryScan {
    */
   async findDuplicates(threshold?: number): Promise<DuplicateAnalysisResult> {
     log("Finding duplicates with threshold", threshold);
+    const config = await this.ensureConfig();
+    await this.ensureExtractor();
     
     // Initialize database if needed
     if (!this.db.isInitialized()) {
@@ -213,15 +232,77 @@ export class DryScan {
     
     // Step 3: Compute duplicates using cosine similarity
     log("Step 3: Computing similarity between unit pairs...");
-    const thresholds = this.resolveThresholds(threshold);
+    const thresholds = this.resolveThresholds(threshold ?? config.threshold);
     const duplicates = this.computeDuplicates(unitsWithEmbeddings, thresholds);
-    log(`Found ${duplicates.length} duplicate groups`);
+    const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group, config));
+    log(`Found ${filteredDuplicates.length} duplicate groups`);
     
     // Step 4: Compute duplication score
-    const score = this.computeDuplicationScore(duplicates, allUnits);
+    const score = this.computeDuplicationScore(filteredDuplicates, allUnits);
     log(`Duplication score: ${score.score.toFixed(2)}% (${score.grade})`);
     
-    return { duplicates, score };
+    return { duplicates: filteredDuplicates, score };
+  }
+
+  /**
+   * Cleans excludedPairs entries that no longer match any indexed units.
+   * Runs an update first to ensure the index reflects current code.
+   */
+  async cleanExclusions(): Promise<{ removed: number; kept: number }> {
+    const config = await this.ensureConfig();
+    await this.ensureExtractor();
+
+    await this.updateIndex();
+    const units = await this.db.getAllUnits();
+
+    const actualPairsByType = {
+      [IndexUnitType.CLASS]: this.buildPairKeys(units, IndexUnitType.CLASS),
+      [IndexUnitType.FUNCTION]: this.buildPairKeys(units, IndexUnitType.FUNCTION),
+      [IndexUnitType.BLOCK]: this.buildPairKeys(units, IndexUnitType.BLOCK),
+    };
+
+    const kept: string[] = [];
+    const removed: string[] = [];
+
+    for (const entry of config.excludedPairs || []) {
+      const parsed = parsePairKey(entry);
+      if (!parsed) {
+        removed.push(entry);
+        continue;
+      }
+
+      const candidates = actualPairsByType[parsed.type];
+      const matched = candidates.some((actual) => pairKeyMatches(actual, parsed));
+      if (matched) {
+        kept.push(entry);
+      } else {
+        removed.push(entry);
+      }
+    }
+
+    const nextConfig: DryConfig = { ...config, excludedPairs: kept };
+    await saveDryConfig(this.repoPath, nextConfig);
+    this.config = nextConfig;
+    if (this.extractor) {
+      this.extractor.setConfig(nextConfig);
+    }
+    log(`Cleaned exclusions. Kept=${kept.length}, removed=${removed.length}`);
+    return { removed: removed.length, kept: kept.length };
+  }
+
+  private buildPairKeys(units: IndexUnit[], type: IndexUnitType): ParsedPairKey[] {
+    const typed = units.filter((u) => u.unitType === type);
+    const pairs: ParsedPairKey[] = [];
+    for (let i = 0; i < typed.length; i++) {
+      for (let j = i + 1; j < typed.length; j++) {
+        const key = pairKeyForUnits(typed[i], typed[j]);
+        const parsed = key ? parsePairKey(key) : null;
+        if (parsed) {
+          pairs.push(parsed);
+        }
+      }
+    }
+    return pairs;
   }
 
   private resolveThresholds(functionThreshold?: number): { function: number; block: number; class: number } {
@@ -300,6 +381,18 @@ export class DryScan {
     }
 
     return duplicates.sort((a, b) => b.similarity - a.similarity);
+  }
+
+  private isGroupExcluded(group: DuplicateGroup, config: DryConfig): boolean {
+    if (!config.excludedPairs || config.excludedPairs.length === 0) return false;
+    const key = pairKeyForUnits(group.left, group.right);
+    if (!key) return false;
+    const actual = parsePairKey(key);
+    if (!actual) return false;
+    return config.excludedPairs.some((entry) => {
+      const parsed = parsePairKey(entry);
+      return parsed ? pairKeyMatches(actual, parsed) : false;
+    });
   }
 
   private getThreshold(type: IndexUnitType, thresholds: { function: number; block: number; class: number }): number {
@@ -413,6 +506,60 @@ export class DryScan {
     if (score < 30) return 'Fair';
     if (score < 50) return 'Poor';
     return 'Critical';
+  }
+
+  private async ensureConfig(): Promise<DryConfig> {
+    if (this.config) {
+      log("Using cached config for %s", this.repoPath);
+      return this.config;
+    }
+    log("Loading config for %s", this.repoPath);
+    this.config = await this.configPromise;
+    return this.config;
+  }
+
+  private async ensureExtractor(): Promise<IndexUnitExtractor> {
+    const config = await this.ensureConfig();
+    if (!this.extractor) {
+      log("Creating index unit extractor with current config");
+      this.extractor = new IndexUnitExtractor(this.repoPath, config, defaultExtractors());
+      return this.extractor;
+    }
+    log("Refreshing extractor configuration");
+    this.extractor.setConfig(config);
+    return this.extractor;
+  }
+
+  private pathExcluded(filePath: string, config: DryConfig): boolean {
+    if (!config.excludedPaths || config.excludedPaths.length === 0) return false;
+    return config.excludedPaths.some((pattern) => minimatch(filePath, pattern, { dot: true }));
+  }
+
+  private async cleanupExcludedFiles(config: DryConfig): Promise<void> {
+    if (!config.excludedPaths || config.excludedPaths.length === 0) return;
+    const units = await this.db.getAllUnits();
+    const files = await this.db.getAllFiles();
+
+    const unitPathsToRemove = new Set<string>();
+    for (const unit of units) {
+      if (this.pathExcluded(unit.filePath, config)) {
+        unitPathsToRemove.add(unit.filePath);
+      }
+    }
+
+    const filePathsToRemove = new Set<string>();
+    for (const file of files) {
+      if (this.pathExcluded(file.filePath, config)) {
+        filePathsToRemove.add(file.filePath);
+      }
+    }
+
+    const paths = [...new Set([...unitPathsToRemove, ...filePathsToRemove])];
+    if (paths.length > 0) {
+      await this.db.removeUnitsByFilePaths(paths);
+      await this.db.removeFilesByFilePaths(paths);
+      log(`Removed excluded paths from index: ${paths.length}`);
+    }
   }
 
   private async isInitialized(): Promise<boolean> {

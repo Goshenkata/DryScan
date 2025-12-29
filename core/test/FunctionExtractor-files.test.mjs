@@ -3,21 +3,21 @@ import assert from "node:assert";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { FunctionExtractor } from "../dist/index.js";
+import { IndexUnitExtractor, DEFAULT_CONFIG } from "../dist/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Test suite for FunctionExtractor file listing and checksum methods.
+ * Test suite for IndexUnitExtractor file listing and checksum methods.
  */
-describe("FunctionExtractor - File Management", () => {
+describe("IndexUnitExtractor - File Management", () => {
   const testDir = path.join(__dirname, "temp-extractor-test");
   let extractor;
 
   beforeEach(async () => {
     await fs.mkdir(testDir, { recursive: true });
-    extractor = new FunctionExtractor(testDir);
+    extractor = new IndexUnitExtractor(testDir, { ...DEFAULT_CONFIG });
   });
 
   afterEach(async () => {

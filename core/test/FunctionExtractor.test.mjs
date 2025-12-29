@@ -1,10 +1,10 @@
 import { expect } from 'chai';
-import { FunctionExtractor, IndexUnitType } from '../dist/index.js';
+import { IndexUnitExtractor, IndexUnitType, DEFAULT_CONFIG } from '../dist/index.js';
 
-describe('FunctionExtractor - Internal Dependencies', () => {
+describe('IndexUnitExtractor - Internal Dependencies', () => {
   describe('Error handling and edge cases', () => {
     it('throws if listSourceFiles path does not exist', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       try {
         await extractor.listSourceFiles('missing.js');
         throw new Error('Should have thrown');
@@ -14,7 +14,7 @@ describe('FunctionExtractor - Internal Dependencies', () => {
     });
 
     it('throws if scan path does not exist', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       try {
         await extractor.scan('missing.js');
         throw new Error('Should have thrown');
@@ -24,14 +24,14 @@ describe('FunctionExtractor - Internal Dependencies', () => {
     });
 
     it('returns empty array if tryScanSupportedFile is called with unsupported file and throwOnUnsupported=false', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       extractor.extractors = [];
       const result = await extractor.tryScanSupportedFile('unsupported.xyz', false);
       expect(result).to.be.an('array').that.is.empty;
     });
 
     it('throws if tryScanSupportedFile is called with unsupported file and throwOnUnsupported=true', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       extractor.extractors = [];
       try {
         await extractor.tryScanSupportedFile('unsupported.xyz', true);
@@ -46,7 +46,7 @@ describe('FunctionExtractor - Internal Dependencies', () => {
   
   describe('applyInternalDependencies', () => {
     it('resolves simple function calls', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
         { id: 'function:helper:1-3', name: 'helper', unitType: IndexUnitType.FUNCTION, filePath: 'file.js', startLine: 1, endLine: 3, code: 'function helper() {}' },
@@ -64,7 +64,7 @@ describe('FunctionExtractor - Internal Dependencies', () => {
     });
 
     it('handles multiple internal calls', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
         { id: 'function:helper1:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper1', filePath: 'file.js', startLine: 1, endLine: 3, code: 'function helper1() {}' },
@@ -81,7 +81,7 @@ describe('FunctionExtractor - Internal Dependencies', () => {
     });
 
     it('ignores external library calls', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
         { id: 'function:doWork:1-5', unitType: IndexUnitType.FUNCTION, name: 'doWork', filePath: 'file.js', startLine: 1, endLine: 5, code: 'function doWork() { console.log("hi"); }' }
@@ -96,7 +96,7 @@ describe('FunctionExtractor - Internal Dependencies', () => {
     });
 
     it('prefers same-file matches for ambiguous names', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
         { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file1.js', startLine: 1, endLine: 3, code: 'function helper() {}' },
@@ -113,7 +113,7 @@ describe('FunctionExtractor - Internal Dependencies', () => {
     });
 
     it('handles Java qualified names', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
         { id: 'function:Sample.helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'Sample.helper', filePath: 'Sample.java', startLine: 1, endLine: 3, code: 'public void helper() {}' },
@@ -130,7 +130,7 @@ describe('FunctionExtractor - Internal Dependencies', () => {
     });
 
     it('avoids duplicate internal functions', async () => {
-      const extractor = new FunctionExtractor('/fake/root');
+      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
       
       const allFunctions = [
         { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file.js', startLine: 1, endLine: 3, code: 'function helper() {}' },

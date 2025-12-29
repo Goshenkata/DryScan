@@ -3,7 +3,7 @@
  - [ ] **Core Improvements**
 	- [x] [ADR-001: Multi-level duplication units (class, function, block)](.github/docs/adr-001-multilevel-duplication-units.md)
 	- [x] [ADR-002: AI triviality detection](.github/docs/adr-002-static-triviality-filtering.md)
-    - [ ] add dryscan config
+    - [x] add dryscan config
 	- [x] Compute Duplication score
 	- [ ] AI backend agnostic (Ollama, OpenAI, etc.
 

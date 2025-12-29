@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { DryScan, DuplicateGroup, DuplicateAnalysisResult } from '@dryscan/core';
+import { DryScan, DuplicateGroup, DuplicateAnalysisResult, loadDryConfig } from '@dryscan/core';
 import { resolve } from 'path';
 import { DuplicateReportServer } from './uiServer.js';
 
@@ -82,7 +82,8 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const scanner = new DryScan(repoPath);
+    const config = await loadDryConfig(repoPath);
+    const scanner = new DryScan(repoPath, config);
     await scanner.init();
     console.log('DryScan initialized successfully');
   });
@@ -93,7 +94,8 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const scanner = new DryScan(repoPath);
+    const config = await loadDryConfig(repoPath);
+    const scanner = new DryScan(repoPath, config);
     await scanner.updateIndex();
     console.log('DryScan index updated successfully');
   });
@@ -104,18 +106,20 @@ program
   .argument('[path]', 'Repository path', '.')
   .option('--json', 'Output results as JSON')
   .option('--ui', 'Serve interactive report at http://localhost:3000')
-  .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.85')
+  .option('-t, --threshold <number>', 'Similarity threshold (0-1)')
   .action(async (path: string, options: { json?: boolean; ui?: boolean; threshold?: string }) => {
     const repoPath = resolve(path);
-    const threshold = parseFloat(options.threshold || '0.85');
-    
-    const scanner = new DryScan(repoPath);
+    const threshold = options.threshold ? parseFloat(options.threshold) : undefined;
+
+    const config = await loadDryConfig(repoPath);
+    const scanner = new DryScan(repoPath, config);
     const result = await scanner.findDuplicates(threshold);
+    const displayThreshold = threshold ?? config.threshold ?? 0.85;
     
     if (options.ui) {
       const server = new DuplicateReportServer({
         repoPath,
-        threshold,
+        threshold: displayThreshold,
         duplicates: result.duplicates,
         score: result.score,
         port: UI_PORT,
@@ -129,8 +133,20 @@ program
       console.log(JSON.stringify(result, null, 2));
     } else {
       // Human-readable format
-      formatDuplicates(result, threshold);
+      formatDuplicates(result, displayThreshold);
     }
+  });
+
+program
+  .command('clean')
+  .description('Remove excludedPairs entries that no longer match indexed code')
+  .argument('[path]', 'Repository path', '.')
+  .action(async (path: string) => {
+    const repoPath = resolve(path);
+    const config = await loadDryConfig(repoPath);
+    const scanner = new DryScan(repoPath, config);
+    const { kept, removed } = await scanner.cleanExclusions();
+    console.log(`Clean complete. Kept ${kept} exclusions, removed ${removed}.`);
   });
 
 program.parse();
