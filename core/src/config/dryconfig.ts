@@ -7,6 +7,8 @@ export interface DryConfig {
   maxLines: number;
   maxBlockLines: number;
   threshold: number;
+  embeddingModel: string;
+  embeddingBaseUrl?: string;
 }
 
 // Baseline config used when no file is present; exported so tests and constructors can seed defaults.
@@ -16,6 +18,8 @@ export const DEFAULT_CONFIG: DryConfig = {
   maxLines: 500,
   maxBlockLines: 200,
   threshold: 0.85,
+  embeddingModel: "embeddinggemma",
+  embeddingBaseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
 };
 
 function normalizeNumber(value: unknown): number | undefined {
@@ -37,6 +41,12 @@ function normalizeConfig(raw: Partial<DryConfig>): DryConfig {
   const maxLines = normalizeNumber(raw.maxLines);
   const maxBlockLines = normalizeNumber(raw.maxBlockLines);
   const threshold = normalizeNumber(raw.threshold);
+  const embeddingModel = typeof raw.embeddingModel === "string" && raw.embeddingModel.trim()
+    ? raw.embeddingModel.trim()
+    : undefined;
+  const embeddingBaseUrl = typeof raw.embeddingBaseUrl === "string" && raw.embeddingBaseUrl.trim()
+    ? raw.embeddingBaseUrl.trim()
+    : undefined;
 
   return {
     excludedPaths: normalizeStringArray(raw.excludedPaths),
@@ -44,6 +54,8 @@ function normalizeConfig(raw: Partial<DryConfig>): DryConfig {
     maxLines: maxLines ?? DEFAULT_CONFIG.maxLines,
     maxBlockLines: maxBlockLines ?? DEFAULT_CONFIG.maxBlockLines,
     threshold: threshold ?? DEFAULT_CONFIG.threshold,
+    embeddingModel: embeddingModel ?? DEFAULT_CONFIG.embeddingModel,
+    embeddingBaseUrl: embeddingBaseUrl ?? DEFAULT_CONFIG.embeddingBaseUrl,
   };
 }
 
@@ -51,7 +63,12 @@ export async function loadDryConfig(repoPath: string): Promise<DryConfig> {
   const configPath = upath.join(repoPath, ".dryconfig.json");
   try {
     const content = await fs.readFile(configPath, "utf8");
-    const parsed = JSON.parse(content) as Partial<DryConfig>;
+    let parsed: Partial<DryConfig> = {};
+    try {
+      parsed = JSON.parse(content) as Partial<DryConfig>;
+    } catch (parseErr) {
+      throw new Error(`Invalid JSON in ${configPath}: ${(parseErr as Error).message}`);
+    }
     return { ...DEFAULT_CONFIG, ...normalizeConfig(parsed) };
   } catch (err: any) {
     if (err?.code === "ENOENT") {

@@ -9,6 +9,7 @@ import { JavaScriptExtractor } from "./extractors/javascript";
 import { JavaExtractor } from "./extractors/java";
 import { minimatch } from "minimatch";
 import { DryConfig } from "./config/dryconfig";
+import { FILE_CHECKSUM_ALGO } from "./const";
 
 const log = debug("DryScan:Extractor");
 
@@ -30,10 +31,10 @@ export class IndexUnitExtractor {
   constructor(
     rootPath: string,
     config: DryConfig,
-    extractors: LanguageExtractor[] = defaultExtractors()
+    extractors?: LanguageExtractor[]
   ) {
     this.root = rootPath;
-    this.extractors = extractors;
+    this.extractors = extractors ?? defaultExtractors();
     this.config = config;
     log("Initialized extractor for %s", this.root);
   }
@@ -110,7 +111,7 @@ export class IndexUnitExtractor {
       : path.join(this.root, filePath);
 
     const content = await fs.readFile(fullPath, "utf8");
-    return crypto.createHash("md5").update(content).digest("hex");
+    return crypto.createHash(FILE_CHECKSUM_ALGO).update(content).digest("hex");
   }
 
   async scan(targetPath: string): Promise<IndexUnit[]> {

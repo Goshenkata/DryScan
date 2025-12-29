@@ -1,3 +1,4 @@
+import type Parser from "tree-sitter";
 import { IndexUnit } from "../types";
 
 // Language-specific knobs so each extractor can tune triviality without changing shared logic.
@@ -10,65 +11,75 @@ export interface TrivialityRules {
   allowSimpleAssignment?: boolean; // Single assignment like this.x = x;
 }
 
+export interface TrivialityContext {
+  bodyNode?: Parser.SyntaxNode | null;
+  isArrowExpression?: boolean;
+}
+
 function simpleName(name: string): string {
   const parts = name.split(".");
   return parts[parts.length - 1];
 }
 
 /**
- * Generic triviality check that can be tuned per language via TrivialityRules.
- * Keep heuristics narrow to avoid suppressing meaningful small methods.
+ * Generic triviality check driven by AST structure (statement shapes), avoiding regex on raw code.
  */
 export function isTrivialFunctionUnit(
   unit: Pick<IndexUnit, "name" | "code">,
-  rules: TrivialityRules
+  rules: TrivialityRules,
+  ctx: TrivialityContext = {}
 ): boolean {
   const name = simpleName(unit.name);
-  const code = unit.code.trim();
-  if (!code) return false;
-
-  // Normalize whitespace to simplify regexes.
-  const normalized = code.replace(/\s+/g, " ").trim();
-
-  // Extract method body when braces exist so modifiers/signatures do not block detection.
-  const bodyMatch = code.match(/\{([\s\S]*)\}/);
-  const body = bodyMatch ? bodyMatch[1] : code;
-  const bodyNormalized = body.replace(/\s+/g, " ").trim();
-  const lines = body.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length > rules.maxLines) return false;
 
   const looksLikeGetter = rules.getterPattern?.test(name) ?? false;
   const looksLikeSetter = rules.setterPattern?.test(name) ?? false;
 
-  // Getter: return a single identifier/field.
-  if (rules.allowReturnOnly && /^(return\s+[A-Za-z_][\w\.]*\s*;?\s*\}?$)/.test(bodyNormalized)) {
-    if (looksLikeGetter || lines.length <= 2) return true;
-  }
-  // Getter fallback: inline body inside braces on one line.
-  if (
-    rules.allowReturnOnly &&
-    /\{\s*return\s+[A-Za-z_][\w\.]*\s*;?\s*\}/.test(normalized) &&
-    (looksLikeGetter || lines.length <= 2)
-  ) {
+  if (ctx.isArrowExpression && rules.allowArrowExpressionBodies) {
     return true;
   }
 
-  // Setter: single assignment of parameter to field.
-  if (
-    rules.allowSimpleAssignment &&
-    /^[A-Za-z_][\w\.]*\s*=\s*[A-Za-z_][\w\.]*\s*;?\s*\}?$/.test(bodyNormalized) &&
-    (looksLikeSetter || lines.length <= 2)
-  ) {
-    return true;
+  if (!ctx.bodyNode) {
+    return false;
   }
 
-  // Arrow-expression body returning identifier (JS/TS).
-  if (
-    rules.allowArrowExpressionBodies &&
-    /^\(?[A-Za-z0-9_,\s]*\)?\s*=>\s*[A-Za-z_][\w\.]*\s*;?$/.test(normalized)
-  ) {
-    return true;
+  const statements = collectStatements(ctx.bodyNode);
+  if (statements.length === 0 || statements.length > rules.maxLines) return false;
+
+  if (rules.allowReturnOnly && isSimpleReturn(statements[0])) {
+    return looksLikeGetter || statements.length <= 2;
+  }
+
+  if (rules.allowSimpleAssignment && isSimpleAssignment(statements[0])) {
+    return looksLikeSetter || statements.length <= 2;
   }
 
   return false;
+}
+
+function collectStatements(body: Parser.SyntaxNode): Parser.SyntaxNode[] {
+  if (body.type.includes("block")) {
+    return body.namedChildren.filter(Boolean);
+  }
+  return [body];
+}
+
+function isIdentifierLike(node: Parser.SyntaxNode | null | undefined): boolean {
+  if (!node) return false;
+  return node.type === "identifier" || node.type === "field_access" || node.type === "member_expression";
+}
+
+function isSimpleReturn(node: Parser.SyntaxNode): boolean {
+  if (node.type !== "return_statement") return false;
+  const target = node.namedChildCount > 0 ? node.namedChild(0) : null;
+  return isIdentifierLike(target);
+}
+
+function isSimpleAssignment(node: Parser.SyntaxNode): boolean {
+  if (node.type !== "expression_statement") return false;
+  const expression = node.namedChild(0);
+  if (!expression) return false;
+  if (expression.type !== "assignment_expression") return false;
+  const left = expression.namedChild(0);
+  const right = expression.namedChild(1);
+  return isIdentifierLike(left) && isIdentifierLike(right);
 }

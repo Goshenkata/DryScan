@@ -134,41 +134,7 @@ dupesCommand
   .option('--json', 'Output results as JSON')
   .option('--ui', 'Serve interactive report at http://localhost:3000')
   .option('-t, --threshold <number>', 'Similarity threshold (0-1)')
-  .action(async (path: string, options: { json?: boolean; ui?: boolean; threshold?: string }) => {
-    const repoPath = resolve(path);
-    const threshold = options.threshold ? parseFloat(options.threshold) : undefined;
-
-    const config = await loadDryConfig(repoPath);
-    const scanner = new DryScan(repoPath, config);
-    const result = await scanner.findDuplicates(threshold);
-    const displayThreshold = threshold ?? config.threshold ?? 0.85;
-
-    const report = buildDuplicateReport(result.duplicates, displayThreshold, result.score);
-    const reportPath = await writeDuplicateReport(repoPath, report);
-    const output = { ...result, duplicates: report.duplicates };
-    
-    if (options.ui) {
-      const server = new DuplicateReportServer({
-        repoPath,
-        threshold: displayThreshold,
-        duplicates: report.duplicates,
-        score: result.score,
-        port: UI_PORT,
-      });
-      await server.start();
-      return;
-    }
-
-    if (options.json) {
-      console.log(JSON.stringify({
-        ...output,
-        reportPath,
-        generatedAt: report.generatedAt,
-      }, null, 2));
-    } else {
-      formatDuplicates(output, displayThreshold, reportPath);
-    }
-  });
+  .action(handleDupesCommand);
 
 dupesCommand
   .command('exclude')
@@ -198,3 +164,39 @@ program
   });
 
 program.parse();
+
+async function handleDupesCommand(path: string, options: { json?: boolean; ui?: boolean; threshold?: string }) {
+  const repoPath = resolve(path);
+  const threshold = options.threshold ? parseFloat(options.threshold) : undefined;
+
+  const config = await loadDryConfig(repoPath);
+  const scanner = new DryScan(repoPath, config);
+  const result = await scanner.findDuplicates(threshold);
+  const displayThreshold = threshold ?? config.threshold ?? 0.85;
+
+  const report = buildDuplicateReport(result.duplicates, displayThreshold, result.score);
+  const reportPath = await writeDuplicateReport(repoPath, report);
+  const output = { ...result, duplicates: report.duplicates };
+  
+  if (options.ui) {
+    const server = new DuplicateReportServer({
+      repoPath,
+      threshold: displayThreshold,
+      duplicates: report.duplicates,
+      score: result.score,
+      port: UI_PORT,
+    });
+    await server.start();
+    return;
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      ...output,
+      reportPath,
+      generatedAt: report.generatedAt,
+    }, null, 2));
+  } else {
+    formatDuplicates(output, displayThreshold, reportPath);
+  }
+}

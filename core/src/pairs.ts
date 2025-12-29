@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import debug from "debug";
 import { minimatch } from "minimatch";
 import { IndexUnit, IndexUnitType } from "./types";
+import { BLOCK_HASH_ALGO } from "./const";
 
 const log = debug("DryScan:pairs");
 
@@ -83,7 +84,7 @@ export function canonicalFunctionSignature(unit: UnitLike): string {
  */
 export function normalizedBlockHash(unit: UnitLike): string {
   const normalized = normalizeCode(unit.code);
-  return crypto.createHash("sha1").update(normalized).digest("hex");
+  return crypto.createHash(BLOCK_HASH_ALGO).update(normalized).digest("hex");
 }
 
 function unitLabel(unit: UnitLike): string {

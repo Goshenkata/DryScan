@@ -32,13 +32,13 @@ export class DryScanDatabase {
   }
 
   async saveUnit(unit: IndexUnit): Promise<void> {
-    if (!this.unitRepository) throw new Error("Database not initialized");
-    await this.unitRepository.save(unit);
+    await this.saveUnits(unit);
   }
 
-  async saveUnits(units: IndexUnit[]): Promise<void> {
+  async saveUnits(units: IndexUnit | IndexUnit[]): Promise<void> {
     if (!this.unitRepository) throw new Error("Database not initialized");
-    await this.unitRepository.save(units);
+    const payload = Array.isArray(units) ? units : [units];
+    await this.unitRepository.save(payload);
   }
 
   async getUnit(id: string): Promise<IndexUnit | null> {
@@ -55,13 +55,11 @@ export class DryScanDatabase {
   }
 
   async updateUnit(unit: IndexUnit): Promise<void> {
-    if (!this.unitRepository) throw new Error("Database not initialized");
-    await this.unitRepository.save(unit);
+    await this.saveUnits(unit);
   }
 
-  async updateUnits(units: IndexUnit[]): Promise<void> {
-    if (!this.unitRepository) throw new Error("Database not initialized");
-    await this.unitRepository.save(units);
+  async updateUnits(units: IndexUnit | IndexUnit[]): Promise<void> {
+    await this.saveUnits(units);
   }
 
   /**
