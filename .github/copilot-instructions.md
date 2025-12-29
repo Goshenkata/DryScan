@@ -26,3 +26,8 @@
 2. You can run sql queries against the generated SQLite DB at `./test-java-project/.dry/index.db` using the terminal command `sqlite3 ./test-java-project/.dry/index.db "SQL_QUERY"`.
 3. You can run unit tests with `npm test`
 4. Make sure ollama service is running.
+
+## Rules when editing code
+- Follow clean code principles.
+- Always make sure to cover new code with tests
+- Comment your code

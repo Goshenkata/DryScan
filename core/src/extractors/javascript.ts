@@ -4,6 +4,17 @@ import JavaScript from "tree-sitter-javascript";
 import { IndexUnit, IndexUnitType } from "../types";
 import { LanguageExtractor } from "./LanguageExtractor";
 import { indexConfig } from "../config/indexConfig";
+import { isTrivialFunctionUnit, TrivialityRules } from "./triviality";
+
+// JS/TS-focused triviality rules. We allow arrow-expression bodies and simple return-only getters/setters.
+const jsTrivialityRules: TrivialityRules = {
+  maxLines: 3,
+  getterPattern: /^(get|is)[A-Z]/,
+  setterPattern: /^set[A-Z]/,
+  allowArrowExpressionBodies: true,
+  allowReturnOnly: true,
+  allowSimpleAssignment: true,
+};
 
 /**
  * Cached parse result to avoid re-parsing during call extraction.
@@ -72,6 +83,10 @@ export class JavaScriptExtractor implements LanguageExtractor {
         type === "arrow_function"
       ) {
         const fnUnit = this.buildFunctionUnit(node, source, file, currentClass);
+        // Skip trivial accessors/one-liners to reduce false-positive duplicates.
+        if (isTrivialFunctionUnit(fnUnit, jsTrivialityRules)) {
+          return;
+        }
         units.push(fnUnit);
         functionNodes.set(fnUnit.id, node);
 

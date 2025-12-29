@@ -4,6 +4,17 @@ import Java from "tree-sitter-java";
 import { IndexUnit, IndexUnitType } from "../types";
 import { LanguageExtractor } from "./LanguageExtractor";
 import { indexConfig } from "../config/indexConfig";
+import { isTrivialFunctionUnit, TrivialityRules } from "./triviality";
+
+// Java-focused triviality rules. Arrow bodies do not apply; keep heuristics narrow.
+const javaTrivialityRules: TrivialityRules = {
+  maxLines: 3,
+  getterPattern: /^(get|is)[A-Z]/,
+  setterPattern: /^set[A-Z]/,
+  allowArrowExpressionBodies: false,
+  allowReturnOnly: true,
+  allowSimpleAssignment: true,
+};
 
 /**
  * Cached parse result to avoid re-parsing during call extraction.
@@ -67,6 +78,10 @@ export class JavaExtractor implements LanguageExtractor {
 
       if (node.type === "method_declaration" || node.type === "constructor_declaration") {
         const functionUnit = this.buildFunctionUnit(node, source, file, currentClass);
+        // Skip trivial accessors/one-liners to cut boilerplate duplicates.
+        if (isTrivialFunctionUnit(functionUnit, javaTrivialityRules)) {
+          return;
+        }
         units.push(functionUnit);
         functionNodes.set(functionUnit.id, node);
 
