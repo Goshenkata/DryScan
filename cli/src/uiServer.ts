@@ -139,7 +139,7 @@ async function readJsonBody(req: any): Promise<any> {
   if (chunks.length === 0) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch (err) {
+  } catch (_err) {
     throw new Error("Invalid JSON body");
   }
 }

@@ -2,7 +2,6 @@
 import { Command } from 'commander';
 import {
   DryScan,
-  DuplicateGroup,
   DuplicateAnalysisResult,
   buildDuplicateReport,
   writeDuplicateReport,

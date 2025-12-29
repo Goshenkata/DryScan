@@ -1,12 +1,9 @@
 import Parser from "tree-sitter";
-import debug from "debug";
 import { IndexUnit, IndexUnitType } from "../types";
 import { LanguageExtractor } from "./LanguageExtractor";
 import { DryConfig } from "../config/dryconfig";
 import { TrivialityRules, isTrivialFunctionUnit } from "./triviality";
 import { indexConfig } from "../config/indexConfig";
-
-const log = debug("DryScan:Extractor:Base");
 
 interface ParsedFile {
   tree: Parser.Tree;
