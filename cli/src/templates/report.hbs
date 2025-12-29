@@ -232,6 +232,7 @@
     const themeLabel = document.getElementById('theme-label');
     const themeLink = document.getElementById('hljs-theme');
     const groups = JSON.parse(dataEl.textContent || '[]');
+    const toast = (msg) => alert(msg);
 
     const applyTheme = (next) => {
       document.documentElement.setAttribute('data-theme', next);
@@ -290,6 +291,12 @@
       title.innerHTML = '<strong>Group ' + (idx + 1) + '</strong> · Similarity ' + (group.similarity * 100).toFixed(1) + '%';
       header.appendChild(title);
       header.appendChild(makePill(group.left.unitType));
+      if (group.shortId) {
+        const idTag = document.createElement('div');
+        idTag.className = 'muted';
+        idTag.textContent = 'ID ' + group.shortId;
+        header.appendChild(idTag);
+      }
       card.appendChild(header);
 
       const grid = document.createElement('div');
@@ -297,6 +304,23 @@
       grid.appendChild(renderSide(group.left, 'Left', group.similarity));
       grid.appendChild(renderSide(group.right, 'Right', group.similarity));
       card.appendChild(grid);
+
+      const footer = document.createElement('div');
+      footer.className = 'row';
+      const excludeBtn = document.createElement('button');
+      excludeBtn.className = 'btn secondary';
+      excludeBtn.textContent = 'Exclude this pair';
+      excludeBtn.dataset.action = 'exclude-pair';
+      excludeBtn.dataset.id = group.shortId || '';
+      excludeBtn.disabled = !group.shortId;
+      footer.appendChild(excludeBtn);
+      if (group.exclusionString) {
+        const exclusionMeta = document.createElement('div');
+        exclusionMeta.className = 'muted';
+        exclusionMeta.textContent = 'Exclusion key: ' + group.exclusionString;
+        footer.appendChild(exclusionMeta);
+      }
+      card.appendChild(footer);
       return card;
     };
 
@@ -374,6 +398,32 @@
           modalCode.textContent = err?.message || 'Unable to fetch file content.';
           modalCode.className = 'language-plaintext hljs';
           modal.classList.add('active');
+        }
+      }
+
+      if (target && target.dataset && target.dataset.action === 'exclude-pair') {
+        const id = target.dataset.id;
+        if (!id) {
+          toast('Missing duplicate id for exclusion.');
+          return;
+        }
+        target.disabled = true;
+        try {
+          const res = await fetch('/api/exclusions', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id }),
+          });
+          const body = await res.json();
+          if (!res.ok || body.error) {
+            throw new Error(body.error || 'Unable to add exclusion');
+          }
+          toast(body.status === 'already-present'
+            ? 'Exclusion already present: ' + body.exclusion
+            : 'Added exclusion: ' + body.exclusion);
+        } catch (err) {
+          toast(err?.message || 'Unable to add exclusion');
+          target.disabled = false;
         }
       }
     });

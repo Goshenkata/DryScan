@@ -13,6 +13,7 @@ import { indexConfig } from "./config/indexConfig";
 import { DryConfig, loadDryConfig, saveDryConfig } from "./config/dryconfig";
 import { pairKeyForUnits, parsePairKey, pairKeyMatches, ParsedPairKey } from "./pairs";
 import { minimatch } from "minimatch";
+import shortUuid from "short-uuid";
 
 const log = debug("DryScan");
 
@@ -358,6 +359,8 @@ export class DryScan {
             duplicates.push({
               id: `${left.id}::${right.id}`,
               similarity,
+              shortId: shortUuid.generate(),
+              exclusionString: pairKeyForUnits(left, right),
               left: {
                 name: left.name,
                 filePath: left.filePath,

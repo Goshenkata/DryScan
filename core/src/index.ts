@@ -17,3 +17,11 @@ export {
 	normalizedBlockHash,
 	ParsedPairKey,
 } from './pairs';
+export {
+	buildDuplicateReport,
+	writeDuplicateReport,
+	loadLatestReport,
+	applyExclusionFromLatestReport,
+	enrichDuplicates,
+	DuplicateReport,
+} from './reports';

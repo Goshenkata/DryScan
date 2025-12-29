@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { DryScan, DuplicateGroup, DuplicateAnalysisResult, loadDryConfig } from '@dryscan/core';
+import {
+  DryScan,
+  DuplicateGroup,
+  DuplicateAnalysisResult,
+  buildDuplicateReport,
+  writeDuplicateReport,
+  applyExclusionFromLatestReport,
+  loadDryConfig,
+} from '@dryscan/core';
 import { resolve } from 'path';
 import { DuplicateReportServer } from './uiServer.js';
 
@@ -10,7 +18,11 @@ const UI_PORT = 3000;
  * Formats duplicate groups in a human-readable format.
  * Shows similarity percentage, file locations, and code snippets.
  */
-function formatDuplicates(result: DuplicateAnalysisResult, threshold: number): void {
+function formatDuplicates(
+  result: DuplicateAnalysisResult,
+  threshold: number,
+  reportPath?: string
+): void {
   const { duplicates, score } = result;
   
   // Display duplication score prominently
@@ -21,6 +33,10 @@ function formatDuplicates(result: DuplicateAnalysisResult, threshold: number): v
   console.log(`   Duplicate Groups: ${score.duplicateGroups}`);
   console.log('\n' + '═'.repeat(80));
   
+  if (reportPath) {
+    console.log(`\n🗂  Report saved to ${reportPath}`);
+  }
+
   if (duplicates.length === 0) {
     console.log(`\n✓ No duplicates found (threshold: ${(threshold * 100).toFixed(0)}%)\n`);
     return;
@@ -31,9 +47,18 @@ function formatDuplicates(result: DuplicateAnalysisResult, threshold: number): v
   
   duplicates.forEach((group, index) => {
     const similarityPercent = (group.similarity * 100).toFixed(1);
+    const exclusionString = group.exclusionString;
+    const shortId = group.shortId;
     
     console.log(`\n[${index + 1}] Similarity: ${similarityPercent}%`);
     console.log('─'.repeat(80));
+
+    if (shortId) {
+      console.log(`Exclusion ID: ${shortId}`);
+    }
+    if (exclusionString) {
+      console.log(`Exclusion key: ${exclusionString}`);
+    }
     
     // Left side
     console.log(`\n📄 ${group.left.filePath}:${group.left.startLine}-${group.left.endLine}`);
@@ -100,9 +125,11 @@ program
     console.log('DryScan index updated successfully');
   });
 
-program
+const dupesCommand = program
   .command('dupes')
-  .description('Find duplicate code blocks')
+  .description('Find duplicate code blocks');
+
+dupesCommand
   .argument('[path]', 'Repository path', '.')
   .option('--json', 'Output results as JSON')
   .option('--ui', 'Serve interactive report at http://localhost:3000')
@@ -115,12 +142,16 @@ program
     const scanner = new DryScan(repoPath, config);
     const result = await scanner.findDuplicates(threshold);
     const displayThreshold = threshold ?? config.threshold ?? 0.85;
+
+    const report = buildDuplicateReport(result.duplicates, displayThreshold, result.score);
+    const reportPath = await writeDuplicateReport(repoPath, report);
+    const output = { ...result, duplicates: report.duplicates };
     
     if (options.ui) {
       const server = new DuplicateReportServer({
         repoPath,
         threshold: displayThreshold,
-        duplicates: result.duplicates,
+        duplicates: report.duplicates,
         score: result.score,
         port: UI_PORT,
       });
@@ -129,11 +160,28 @@ program
     }
 
     if (options.json) {
-      // Output as JSON
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify({
+        ...output,
+        reportPath,
+        generatedAt: report.generatedAt,
+      }, null, 2));
     } else {
-      // Human-readable format
-      formatDuplicates(result, displayThreshold);
+      formatDuplicates(output, displayThreshold, reportPath);
+    }
+  });
+
+dupesCommand
+  .command('exclude')
+  .description('Add the duplicate pair identified by short id to .dryconfig.json from the latest report')
+  .argument('<id>', 'Short id from the latest dryscan report')
+  .argument('[path]', 'Repository path', '.')
+  .action(async (id: string, path: string) => {
+    const repoPath = resolve(path);
+    const { exclusion, added } = await applyExclusionFromLatestReport(repoPath, id);
+    if (added) {
+      console.log(`Added exclusion: ${exclusion}`);
+    } else {
+      console.log(`Exclusion already present: ${exclusion}`);
     }
   });
 

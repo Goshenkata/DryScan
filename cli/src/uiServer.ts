@@ -4,7 +4,7 @@ import { resolve, join } from "path";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import Handlebars from "handlebars";
-import { DuplicateGroup, DuplicationScore } from "@dryscan/core";
+import { DuplicateGroup, DuplicationScore, applyExclusionFromLatestReport } from "@dryscan/core";
 
 export interface UiServerOptions {
   port?: number;
@@ -50,6 +50,29 @@ export class DuplicateReportServer {
       if (url.pathname === "/api/duplicates") {
         res.setHeader("content-type", "application/json");
         res.end(JSON.stringify(duplicates));
+        return;
+      }
+
+      if (url.pathname === "/api/exclusions" && req.method === "POST") {
+        try {
+          const payload = await readJsonBody(req);
+          const id = payload?.id;
+          if (!id || typeof id !== "string") {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: "Missing or invalid id" }));
+            return;
+          }
+
+          const result = await applyExclusionFromLatestReport(this.repoRoot, id);
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({
+            exclusion: result.exclusion,
+            status: result.added ? "added" : "already-present",
+          }));
+        } catch (err: any) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: err?.message || "Unable to apply exclusion" }));
+        }
         return;
       }
 
@@ -106,6 +129,19 @@ async function loadTemplate(): Promise<Handlebars.TemplateDelegate> {
   const templatePath = join(fileURLToPath(new URL(".", import.meta.url)), "templates", "report.hbs");
   const source = await readFile(templatePath, "utf8");
   return Handlebars.compile(source, { noEscape: true });
+}
+
+async function readJsonBody(req: any): Promise<any> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  if (chunks.length === 0) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch (err) {
+    throw new Error("Invalid JSON body");
+  }
 }
 
 function buildScoreView(score: DuplicationScore) {

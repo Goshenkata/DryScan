@@ -9,6 +9,8 @@ export interface DuplicateGroup {
   similarity: number;
   left: DuplicateSide;
   right: DuplicateSide;
+  shortId: string;
+  exclusionString: string | null;
 }
 
 export interface DuplicationScore {

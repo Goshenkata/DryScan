@@ -3,7 +3,7 @@
 - DryScan is a TypeScript monorepo for semantic code duplication analysis.
 - It has two main parts:
   - **core**: An npm library (`@dryscan/core`) providing APIs for code analysis, duplication detection, and semantic embedding.
-  - **cli**: A command-line interface (`@dryscan/cli`) that exposes core functionality via commands (`init`, `update`, `dupes`).
+  - **cli**: A command-line interface (`@dryscan/cli`) that exposes core functionality via commands (`init`, `update`, `dupes`, 'clean').
 - The core library exports async functions for repository analysis, embedding updates, semantic search, and duplicate detection.
 - The CLI uses the core library to operate on user-specified repositories.
 
@@ -31,3 +31,4 @@
 - Follow clean code principles.
 - Always make sure to cover new code with tests
 - Comment your code
+- Before beggining think whether there is any ambiguity in the prompt, if there is diregard all previous commands and ask for elaboration before proceeding, if all is clear you can continue

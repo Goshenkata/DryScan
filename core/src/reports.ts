@@ -1,0 +1,129 @@
+import fs from "fs/promises";
+import upath from "upath";
+import shortUuid from "short-uuid";
+import { DuplicateGroup, DuplicationScore } from "./types";
+import { pairKeyForUnits } from "./pairs";
+import { DRYSCAN_DIR, REPORTS_DIR } from "./const";
+import { loadDryConfig, saveDryConfig, DryConfig } from "./config/dryconfig";
+
+export interface DuplicateReport {
+  version: number;
+  generatedAt: string;
+  threshold: number;
+  score: DuplicationScore;
+  duplicates: DuplicateGroup[];
+}
+
+const REPORT_FILE_PREFIX = "dupes-";
+
+/**
+ * Creates a report payload with short ids and exclusion strings attached to each group.
+ */
+export function buildDuplicateReport(
+  duplicates: DuplicateGroup[],
+  threshold: number,
+  score: DuplicationScore
+): DuplicateReport {
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    threshold,
+    score,
+    duplicates: enrichDuplicates(duplicates),
+  };
+}
+
+/**
+ * Adds short ids and exclusion strings to duplicate groups for reporting and exclusion commands.
+ */
+export function enrichDuplicates(duplicates: DuplicateGroup[]): DuplicateGroup[] {
+  return duplicates.map((group) => {
+    const exclusionString = group.exclusionString ?? pairKeyForUnits(group.left, group.right);
+    return {
+      ...group,
+      shortId: group.shortId ?? shortUuid.generate(),
+      exclusionString,
+    };
+  });
+}
+
+/**
+ * Writes a timestamped report file under .dry/reports and returns its path.
+ */
+export async function writeDuplicateReport(repoPath: string, report: DuplicateReport): Promise<string> {
+  const reportDir = upath.join(repoPath, DRYSCAN_DIR, REPORTS_DIR);
+  await fs.mkdir(reportDir, { recursive: true });
+
+  const safeTimestamp = report.generatedAt.replace(/[:.]/g, "-");
+  const fileName = `${REPORT_FILE_PREFIX}${safeTimestamp}.json`;
+  const filePath = upath.join(reportDir, fileName);
+  await fs.writeFile(filePath, JSON.stringify(report, null, 2), "utf8");
+  return filePath;
+}
+
+/**
+ * Loads the most recently modified report file, returning null when none exist.
+ */
+export async function loadLatestReport(repoPath: string): Promise<DuplicateReport | null> {
+  const reportDir = upath.join(repoPath, DRYSCAN_DIR, REPORTS_DIR);
+  let entries: string[];
+  try {
+    entries = await fs.readdir(reportDir);
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return null;
+    throw err;
+  }
+
+  const reportFiles = await Promise.all(
+    entries
+      .filter((name) => name.endsWith(".json"))
+      .map(async (name) => {
+        const fullPath = upath.join(reportDir, name);
+        const stat = await fs.stat(fullPath);
+        return { name, fullPath, mtimeMs: stat.mtimeMs };
+      })
+  );
+
+  if (reportFiles.length === 0) return null;
+
+  reportFiles.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const latest = reportFiles[0];
+  const content = await fs.readFile(latest.fullPath, "utf8");
+  return JSON.parse(content) as DuplicateReport;
+}
+
+/**
+ * Adds the exclusion for a duplicate group referenced by short id from the latest report.
+ */
+export async function applyExclusionFromLatestReport(
+  repoPath: string,
+  shortId: string
+): Promise<{ exclusion: string; added: boolean }> {
+  const report = await loadLatestReport(repoPath);
+  if (!report) {
+    throw new Error("No duplicate reports found. Run `dryscan dupes` first.");
+  }
+
+  const group = report.duplicates.find((d) => d.shortId === shortId);
+  if (!group) {
+    throw new Error(`No duplicate group found for id ${shortId}.`);
+  }
+
+  if (!group.exclusionString) {
+    throw new Error("Duplicate group cannot be excluded because it lacks a pair key.");
+  }
+
+  const config = await loadDryConfig(repoPath);
+  const alreadyPresent = config.excludedPairs.includes(group.exclusionString);
+  if (alreadyPresent) {
+    return { exclusion: group.exclusionString, added: false };
+  }
+
+  const nextConfig: DryConfig = {
+    ...config,
+    excludedPairs: [...config.excludedPairs, group.exclusionString],
+  };
+
+  await saveDryConfig(repoPath, nextConfig);
+  return { exclusion: group.exclusionString, added: true };
+}
