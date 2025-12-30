@@ -5,8 +5,14 @@ import { Validator, Schema } from "jsonschema";
 export interface DryConfig {
   excludedPaths: string[];
   excludedPairs: string[];
-  maxLines: number;
-  maxBlockLines: number;
+  /** Minimum number of lines for a class/function to be indexed (0/undefined disables). */
+  minLines: number;
+  /** Maximum number of lines for a class/function to be indexed (0/undefined disables). */
+  maxLines?: number;
+  /** Minimum number of lines for a block to be indexed (0/undefined disables). */
+  minBlockLines: number;
+  /** Maximum number of lines for a block to be indexed (0/undefined disables). */
+  maxBlockLines?: number;
   threshold: number;
   embeddingModel: string;
   embeddingBaseUrl?: string;
@@ -16,8 +22,8 @@ export interface DryConfig {
 export const DEFAULT_CONFIG: DryConfig = {
   excludedPaths: [],
   excludedPairs: [],
-  maxLines: 3,
-  maxBlockLines: 5,
+  minLines: 3,
+  minBlockLines: 5,
   threshold: 0.85,
   embeddingModel: "embeddinggemma",
   embeddingBaseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
@@ -31,7 +37,9 @@ const partialConfigSchema: Schema = {
   properties: {
     excludedPaths: { type: "array", items: { type: "string" } },
     excludedPairs: { type: "array", items: { type: "string" } },
+    minLines: { type: "number" },
     maxLines: { type: "number" },
+    minBlockLines: { type: "number" },
     maxBlockLines: { type: "number" },
     threshold: { type: "number" },
     embeddingModel: { type: "string" },
@@ -44,8 +52,8 @@ const fullConfigSchema: Schema = {
   required: [
     "excludedPaths",
     "excludedPairs",
-    "maxLines",
-    "maxBlockLines",
+    "minLines",
+    "minBlockLines",
     "threshold",
     "embeddingModel",
   ],

@@ -9,7 +9,7 @@ import { DryScan, DryScanDatabase, detectFileChanges, performIncrementalUpdate, 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const baseConfig = () => ({ ...DEFAULT_CONFIG });
+const baseConfig = () => ({ ...DEFAULT_CONFIG, minLines: 0 });
 
 /**
  * Test suite for updateIndex functionality.

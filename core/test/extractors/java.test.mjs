@@ -6,7 +6,7 @@ import { JavaExtractor, DEFAULT_CONFIG } from '../../dist/index.js';
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 
 describe('JavaExtractor', () => {
-  const config = { ...DEFAULT_CONFIG, maxLines: 1000, maxBlockLines: 1000 };
+  const config = { ...DEFAULT_CONFIG, minLines: 0 };
   describe('Error handling and edge cases', () => {
     it('returns empty array if extractFromText is called with empty source', async () => {
       const extractor = new JavaExtractor();
@@ -39,5 +39,28 @@ describe('JavaExtractor', () => {
     // constructor may appear as Sample.Sample or just Sample depending on grammar
     expect(names.some(n => n === 'Sample' || n === 'Sample.Sample' || n.includes('constructor'))).to.equal(true);
     expect(results.length).to.be.greaterThanOrEqual(4);
+  });
+
+  it('applies minLines to functions (skips short functions)', async () => {
+    const source = `
+public class A {
+  public void shorty() { }
+
+  public void longer() {
+    int a = 1;
+    int b = 2;
+    int c = a + b;
+    int d = c * 2;
+    System.out.println(d);
+  }
+}
+`;
+
+    const extractor = new JavaExtractor();
+    const results = await extractor.extractFromText('A.java', source, { ...DEFAULT_CONFIG, minLines: 3 });
+    const names = results.map(r => r.name);
+
+    expect(names).to.include('A.longer');
+    expect(names).to.not.include('A.shorty');
   });
 });

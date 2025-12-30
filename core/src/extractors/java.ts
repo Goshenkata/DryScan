@@ -52,7 +52,7 @@ export class JavaExtractor implements LanguageExtractor {
         const startLine = node.startPosition.row;
         const endLine = node.endPosition.row;
         const classLength = endLine - startLine;
-        const skipClass = config.maxLines && classLength > config.maxLines;
+        const skipClass = this.shouldSkip(classLength, config);
         const classId = this.buildId(IndexUnitType.CLASS, className, startLine, endLine);
         const code = this.stripClassBody(node, source)
         const classUnit: IndexUnit = {
@@ -80,7 +80,7 @@ export class JavaExtractor implements LanguageExtractor {
         const fnUnit = this.buildFunctionUnit(node, source, fileRelPath, currentClass);
         const fnLength = fnUnit.endLine - fnUnit.startLine;
         const bodyNode = this.getFunctionBody(node);
-        const skipFunction = (config.maxLines && fnLength > config.maxLines) ||
+        const skipFunction = this.shouldSkip(fnLength, config) ||
           isTrivialFunctionUnit(fnUnit, javaTrivialityRules, {
             bodyNode,
             isArrowExpression: node.type === "arrow_function",
@@ -192,6 +192,10 @@ export class JavaExtractor implements LanguageExtractor {
     return bodies;
   }
 
+  private shouldSkip(unitLineCount: number, config: DryConfig): boolean {
+    return config.minLines > 0 && unitLineCount < config.minLines;
+  }
+
   private buildFunctionUnit(
     node: Parser.SyntaxNode,
     source: string,
@@ -234,8 +238,8 @@ export class JavaExtractor implements LanguageExtractor {
         const startLine = n.startPosition.row;
         const endLine = n.endPosition.row;
         const lineCount = endLine - startLine;
-        const withinLimits = !config.maxBlockLines || lineCount <= config.maxBlockLines;
-        if (lineCount >= indexConfig.blockMinLines && withinLimits) {
+        const meetsMinBlock = !config.minBlockLines || lineCount >= config.minBlockLines;
+        if (lineCount >= indexConfig.blockMinLines && meetsMinBlock) {
           const id = this.buildId(IndexUnitType.BLOCK, parentFunction.name, startLine, endLine);
           const blockUnit: IndexUnit = {
             id,

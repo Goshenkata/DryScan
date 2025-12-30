@@ -9,7 +9,7 @@ describe('JavaExtractor - Call Extraction', () => {
   let extractor;
   let file;
   let source;
-  const config = { ...DEFAULT_CONFIG, maxLines: 1000, maxBlockLines: 1000 };
+  const config = { ...DEFAULT_CONFIG, minLines: 0 };
 
   before(async () => {
     file = path.join(resourcesDir, 'CallerSample.java');
