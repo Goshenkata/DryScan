@@ -14,7 +14,6 @@
     "build": "npm run build --workspaces",
     "clean": "npm run clean --workspaces",
     "test": "npm run test --workspaces",
-    "dev": "npm run dev --workspaces",
     "coverage": "npm run coverage --workspaces",
     "lint": "eslint ."
   },

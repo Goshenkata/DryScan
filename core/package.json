@@ -14,8 +14,6 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --outDir dist",
     "clean": "rm -rf dist",
-    "dev": "tsc --watch",
-    "prepublishOnly": "npm run build",
     "test": "tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\"",
     "coverage": "c8 tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\""
   },

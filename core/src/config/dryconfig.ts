@@ -5,14 +5,8 @@ import { Validator, Schema } from "jsonschema";
 export interface DryConfig {
   excludedPaths: string[];
   excludedPairs: string[];
-  /** Minimum number of lines for a class/function to be indexed (0/undefined disables). */
   minLines: number;
-  /** Maximum number of lines for a class/function to be indexed (0/undefined disables). */
-  maxLines?: number;
-  /** Minimum number of lines for a block to be indexed (0/undefined disables). */
   minBlockLines: number;
-  /** Maximum number of lines for a block to be indexed (0/undefined disables). */
-  maxBlockLines?: number;
   threshold: number;
   embeddingModel: string;
   embeddingBaseUrl?: string;
@@ -38,9 +32,7 @@ const partialConfigSchema: Schema = {
     excludedPaths: { type: "array", items: { type: "string" } },
     excludedPairs: { type: "array", items: { type: "string" } },
     minLines: { type: "number" },
-    maxLines: { type: "number" },
     minBlockLines: { type: "number" },
-    maxBlockLines: { type: "number" },
     threshold: { type: "number" },
     embeddingModel: { type: "string" },
     embeddingBaseUrl: { type: "string" },

@@ -10,9 +10,6 @@
   "scripts": {
     "build": "tsc && mkdir -p dist/templates && cp src/templates/report.hbs dist/templates/report.hbs",
     "clean": "rm -rf dist",
-    "dev": "tsc --watch",
-    "start": "node ./dist/cli.js",
-    "prepare": "npm run build",
     "test": "echo \"No tests for CLI yet\"",
     "coverage": "echo \"No coverage for CLI yet\""
   },
