@@ -1,7 +1,4 @@
-import Handlebars from 'handlebars';
-import { readFile } from 'fs/promises';
-import { dirname, resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve } from 'path';
 import {
   DryScan,
   DuplicateAnalysisResult,
@@ -12,131 +9,79 @@ import {
 import { DuplicateReportServer } from './uiServer.js';
 
 const UI_PORT = 3000;
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-let duplicatesTemplate: Handlebars.TemplateDelegate | null = null;
-
-async function loadDuplicatesTemplate(): Promise<Handlebars.TemplateDelegate> {
-  if (duplicatesTemplate) return duplicatesTemplate;
-
-  const templatesDir = resolve(__dirname, 'templates');
-  const [duplicateTemplateSource, codeSnippetSource] = await Promise.all([
-    readFile(resolve(templatesDir, 'duplicate-cli.hbs'), 'utf8'),
-    readFile(resolve(templatesDir, 'code-snippet.hbs'), 'utf8'),
-  ]);
-
-  Handlebars.registerPartial('codeSnippet', codeSnippetSource);
-  duplicatesTemplate = Handlebars.compile(duplicateTemplateSource);
-  return duplicatesTemplate;
-}
 
 type DupesOptions = { json?: boolean; ui?: boolean };
-type SnippetLine = { num: string; content: string };
-type SnippetView = { lines: SnippetLine[]; truncatedCount?: number };
 
-type DuplicateTemplateData = {
-  reportPath?: string;
-  thresholdPercent: string;
-  hasDuplicates: boolean;
-  duplicatesCount: number;
-  dividers: {
-    heavy: string;
-    light: string;
-    vs: string;
-  };
-  score: {
-    percent: string;
-    grade: string;
-    totalLines: string;
-    duplicateLines: string;
-    duplicateGroups: string;
-  };
-  groups: Array<{
-    index: number;
-    similarityPercent: string;
-    shortId?: string;
-    exclusionString?: string;
-    left: SnippetView & {
-      filePath: string;
-      startLine: number;
-      endLine: number;
-    };
-    right: SnippetView & {
-      filePath: string;
-      startLine: number;
-      endLine: number;
-    };
-  }>;
-};
-
-function toSnippetView(code: string, maxLines = 15): SnippetView {
+function formatCodeSnippet(code: string, maxLines: number = 15): string {
   const lines = code.split('\n');
   const displayLines = lines.slice(0, maxLines);
+  const truncated = lines.length > maxLines;
 
-  return {
-    lines: displayLines.map((line, idx) => ({
-      num: (idx + 1).toString().padStart(3, ' '),
-      content: line,
-    })),
-    truncatedCount: lines.length > maxLines ? lines.length - maxLines : undefined,
-  };
+  const formatted = displayLines
+    .map((line, i) => {
+      const lineNum = (i + 1).toString().padStart(3, ' ');
+      return `  ${lineNum} │ ${line}`;
+    })
+    .join('\n');
+
+  return formatted + (truncated ? `\n  ... │ (${lines.length - maxLines} more lines)` : '');
 }
 
-function toDuplicateTemplateData(
+function formatDuplicates(
   result: DuplicateAnalysisResult,
   threshold: number,
   reportPath?: string
-): DuplicateTemplateData {
+): void {
   const { duplicates, score } = result;
-  const thresholdPercent = (threshold * 100).toFixed(0);
 
-  return {
-    reportPath,
-    thresholdPercent,
-    hasDuplicates: duplicates.length > 0,
-    duplicatesCount: duplicates.length,
-    dividers: {
-      heavy: '═'.repeat(80),
-      light: '─'.repeat(80),
-      vs: `${'~'.repeat(40)} VS ${'~'.repeat(40)}`,
-    },
-    score: {
-      percent: score.score.toFixed(2),
-      grade: score.grade,
-      totalLines: score.totalLines.toLocaleString(),
-      duplicateLines: score.duplicateLines.toLocaleString(),
-      duplicateGroups: score.duplicateGroups.toLocaleString(),
-    },
-    groups: duplicates.map((group, index) => ({
-      index: index + 1,
-      similarityPercent: (group.similarity * 100).toFixed(1),
-      shortId: group.shortId,
-      exclusionString: group.exclusionString ?? undefined,
-      left: {
-        filePath: group.left.filePath,
-        startLine: group.left.startLine,
-        endLine: group.left.endLine,
-        ...toSnippetView(group.left.code),
-      },
-      right: {
-        filePath: group.right.filePath,
-        startLine: group.right.startLine,
-        endLine: group.right.endLine,
-        ...toSnippetView(group.right.code),
-      },
-    })),
-  };
-}
+  console.log('\n' + '═'.repeat(80));
+  console.log(`\n📊 DUPLICATION SCORE: ${score.score.toFixed(2)}% - ${score.grade}`);
+  console.log(`   Total Lines: ${score.totalLines.toLocaleString()}`);
+  console.log(`   Duplicate Lines (weighted): ${score.duplicateLines.toLocaleString()}`);
+  console.log(`   Duplicate Groups: ${score.duplicateGroups}`);
+  console.log('\n' + '═'.repeat(80));
 
-async function renderDuplicateReport(
-  result: DuplicateAnalysisResult,
-  threshold: number,
-  reportPath?: string
-): Promise<void> {
-  const template = await loadDuplicatesTemplate();
-  const view = toDuplicateTemplateData(result, threshold, reportPath);
-  const rendered = template(view).trimEnd();
-  console.log('\n' + rendered + '\n');
+  if (reportPath) {
+    console.log(`\n🗂  Report saved to ${reportPath}`);
+  }
+
+  if (duplicates.length === 0) {
+    console.log(`\n✓ No duplicates found (threshold: ${(threshold * 100).toFixed(0)}%)\n`);
+    return;
+  }
+
+  console.log(`\n🔍 Found ${duplicates.length} duplicate group(s) (threshold: ${(threshold * 100).toFixed(0)}%)\n`);
+  console.log('═'.repeat(80));
+
+  duplicates.forEach((group, index) => {
+    const similarityPercent = (group.similarity * 100).toFixed(1);
+    const exclusionString = group.exclusionString;
+    const shortId = group.shortId;
+
+    console.log(`\n[${index + 1}] Similarity: ${similarityPercent}%`);
+    console.log('─'.repeat(80));
+
+    if (shortId) {
+      console.log(`Exclusion ID: ${shortId}`);
+    }
+    if (exclusionString) {
+      console.log(`Exclusion key: ${exclusionString}`);
+    }
+
+    console.log(`\n📄 ${group.left.filePath}:${group.left.startLine}-${group.left.endLine}`);
+    console.log(formatCodeSnippet(group.left.code));
+
+    console.log('\n' + '~'.repeat(40) + ' VS ' + '~'.repeat(40) + '\n');
+
+    console.log(`📄 ${group.right.filePath}:${group.right.startLine}-${group.right.endLine}`);
+    console.log(formatCodeSnippet(group.right.code));
+
+    if (index < duplicates.length - 1) {
+      console.log('\n' + '═'.repeat(80));
+    }
+  });
+
+  console.log('\n' + '═'.repeat(80) + '\n');
 }
 
 export async function handleDupesCommand(path: string, options: DupesOptions): Promise<void> {
@@ -175,6 +120,6 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
       )
     );
   } else {
-    await renderDuplicateReport(output, displayThreshold, reportPath);
+    formatDuplicates(output, displayThreshold, reportPath);
   }
 }
