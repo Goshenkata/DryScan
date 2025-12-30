@@ -4,7 +4,7 @@ import {
   DuplicateAnalysisResult,
   buildDuplicateReport,
   writeDuplicateReport,
-  resolveDryConfig,
+  configStore,
 } from '@dryscan/core';
 import { DuplicateReportServer } from './uiServer.js';
 
@@ -86,8 +86,9 @@ function formatDuplicates(
 
 export async function handleDupesCommand(path: string, options: DupesOptions): Promise<void> {
   const repoPath = resolve(path);
-  const config = await resolveDryConfig(repoPath);
-  const scanner = new DryScan(repoPath, config);
+  await configStore.init(repoPath);
+  const config = await configStore.get(repoPath);
+  const scanner = new DryScan(repoPath);
   const result = await scanner.findDuplicates();
   const displayThreshold = config.threshold;
 

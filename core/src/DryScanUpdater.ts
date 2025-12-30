@@ -1,12 +1,12 @@
 import path from "path";
 import fs from "fs/promises";
 import debug from "debug";
-import { DryConfig } from "./config/dryconfig";
 import { IndexUnit } from "./types";
 import { IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { FileEntity } from "./db/entities/FileEntity";
 import { OllamaEmbeddings } from "@langchain/ollama";
+import { configStore } from "./config/configStore";
 
 const log = debug("DryScan:Updater");
 
@@ -172,8 +172,9 @@ export async function updateFileTracking(
  * @param fn - Function to compute embedding for
  * @returns Function with embedding populated
  */
-export async function addEmbedding(fn: IndexUnit, config?: DryConfig): Promise<IndexUnit> {
+export async function addEmbedding(repoPath: string, fn: IndexUnit): Promise<IndexUnit> {
   try {
+    const config = await configStore.get(repoPath);
     const embeddings = new OllamaEmbeddings({
       model: config?.embeddingModel || "embeddinggemma",
       baseUrl: config?.embeddingBaseUrl || process.env.OLLAMA_API_URL || "http://localhost:11434",
@@ -200,7 +201,6 @@ export async function performIncrementalUpdate(
   repoPath: string,
   extractor: IndexUnitExtractor,
   db: DryScanDatabase,
-  config?: DryConfig
 ): Promise<void> {
   log("Starting incremental update");
   
@@ -244,7 +244,7 @@ export async function performIncrementalUpdate(
 
     // Step 5: Recompute embeddings for affected units only
     const updatedWithEmbeddings = await Promise.all(
-      updatedWithDeps.map(fn => addEmbedding(fn, config))
+      updatedWithDeps.map(fn => addEmbedding(repoPath, fn))
     );
       await db.updateUnits(updatedWithEmbeddings);
       log(`Recomputed embeddings for ${updatedWithEmbeddings.length} units`);

@@ -11,7 +11,7 @@ import {
   DryScan,
   buildDuplicateReport,
   writeDuplicateReport,
-  resolveDryConfig,
+  configStore,
 } from "@dryscan/core";
 
 export interface UiServerOptions {
@@ -42,11 +42,13 @@ export class DuplicateReportServer {
   private readonly repoRoot: string;
   private state: { duplicates: DuplicateGroup[]; score: DuplicationScore; threshold: number };
   private regenerating?: Promise<void>;
+  private readonly configReady: Promise<any>;
 
   constructor(private readonly options: UiServerOptions) {
     this.port = options.port ?? defaultPort;
     this.templatePromise = loadTemplate();
     this.repoRoot = resolve(options.repoPath);
+    this.configReady = configStore.init(this.repoRoot);
     this.state = {
       duplicates: options.duplicates,
       score: options.score,
@@ -157,9 +159,10 @@ export class DuplicateReportServer {
     }
 
     const run = async () => {
-      const config = await resolveDryConfig(this.repoRoot);
+      await this.configReady;
+      const config = await configStore.get(this.repoRoot);
       const effectiveThreshold = config.threshold;
-      const scanner = new DryScan(this.repoRoot, config);
+      const scanner = new DryScan(this.repoRoot);
       const result = await scanner.findDuplicates();
       const report = buildDuplicateReport(result.duplicates, effectiveThreshold, result.score);
       await writeDuplicateReport(this.repoRoot, report);

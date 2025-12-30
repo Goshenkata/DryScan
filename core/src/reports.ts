@@ -4,7 +4,8 @@ import shortUuid from "short-uuid";
 import { DuplicateGroup, DuplicationScore } from "./types";
 import { pairKeyForUnits } from "./pairs";
 import { DRYSCAN_DIR, REPORTS_DIR } from "./const";
-import { loadDryConfig, saveDryConfig, DryConfig } from "./config/dryconfig";
+import { DryConfig } from "./config/dryconfig";
+import { configStore } from "./config/configStore";
 
 export interface DuplicateReport {
   version: number;
@@ -113,7 +114,7 @@ export async function applyExclusionFromLatestReport(
     throw new Error("Duplicate group cannot be excluded because it lacks a pair key.");
   }
 
-  const config = await loadDryConfig(repoPath);
+  const config = await configStore.get(repoPath);
   const alreadyPresent = config.excludedPairs.includes(group.exclusionString);
   if (alreadyPresent) {
     return { exclusion: group.exclusionString, added: false };
@@ -124,6 +125,6 @@ export async function applyExclusionFromLatestReport(
     excludedPairs: [...config.excludedPairs, group.exclusionString],
   };
 
-  await saveDryConfig(repoPath, nextConfig);
+  await configStore.save(repoPath, nextConfig);
   return { exclusion: group.exclusionString, added: true };
 }

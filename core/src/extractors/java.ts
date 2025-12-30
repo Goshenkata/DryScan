@@ -2,8 +2,9 @@ import Parser from "tree-sitter";
 import Java from "tree-sitter-java";
 import { LanguageExtractor } from "./LanguageExtractor";
 import { IndexUnit, IndexUnitType } from "../types";
-import { DryConfig } from "../config/dryconfig";
 import { indexConfig } from "../config/indexConfig";
+import { DryConfig } from "../config/dryconfig";
+import { configStore } from "../config/configStore";
 
 interface ParsedFile {
   tree: Parser.Tree;
@@ -16,9 +17,12 @@ export class JavaExtractor implements LanguageExtractor {
   readonly exts = [".java"];
 
   private parser: Parser;
+  private readonly repoPath: string;
+  private config?: DryConfig;
   private readonly parsedFiles: Map<string, ParsedFile> = new Map();
 
-  constructor() {
+  constructor(repoPath: string) {
+    this.repoPath = repoPath;
     this.parser = new Parser();
     this.parser.setLanguage(Java);
   }
@@ -28,8 +32,10 @@ export class JavaExtractor implements LanguageExtractor {
     return this.exts.some((ext) => lower.endsWith(ext));
   }
 
-  async extractFromText(fileRelPath: string, source: string, config: DryConfig): Promise<IndexUnit[]> {
+  async extractFromText(fileRelPath: string, source: string): Promise<IndexUnit[]> {
     if (!source.trim()) return [];
+
+    this.config = await configStore.get(this.repoPath);
 
     const tree = this.parser.parse(source);
     const units: IndexUnit[] = [];
@@ -41,9 +47,9 @@ export class JavaExtractor implements LanguageExtractor {
         const startLine = node.startPosition.row;
         const endLine = node.endPosition.row;
         const classLength = endLine - startLine;
-        const skipClass = this.shouldSkip(IndexUnitType.CLASS, className, classLength, config);
+        const skipClass = this.shouldSkip(IndexUnitType.CLASS, className, classLength);
         const classId = this.buildId(IndexUnitType.CLASS, className, startLine, endLine);
-        const code = this.stripClassBody(node, source)
+        const code = this.stripClassBody(node, source);
         const classUnit: IndexUnit = {
           id: classId,
           name: className,
@@ -69,7 +75,7 @@ export class JavaExtractor implements LanguageExtractor {
         const fnUnit = this.buildFunctionUnit(node, source, fileRelPath, currentClass);
         const fnLength = fnUnit.endLine - fnUnit.startLine;
         const bodyNode = this.getFunctionBody(node);
-        const skipFunction = this.shouldSkip(IndexUnitType.FUNCTION, fnUnit.name, fnLength, config);
+        const skipFunction = this.shouldSkip(IndexUnitType.FUNCTION, fnUnit.name, fnLength);
 
         if (skipFunction) {
           return;
@@ -79,7 +85,7 @@ export class JavaExtractor implements LanguageExtractor {
         functionNodes.set(fnUnit.id, node);
 
         if (bodyNode) {
-          const blocks = this.extractBlocks(bodyNode, source, fileRelPath, fnUnit, config);
+          const blocks = this.extractBlocks(bodyNode, source, fileRelPath, fnUnit);
           units.push(...blocks);
         }
       }
@@ -177,7 +183,11 @@ export class JavaExtractor implements LanguageExtractor {
     return bodies;
   }
 
-  private shouldSkip(unitType: IndexUnitType, name: string, lineCount: number, config: DryConfig): boolean {
+  private shouldSkip(unitType: IndexUnitType, name: string, lineCount: number): boolean {
+    if (!this.config) {
+      throw new Error("Config not loaded before skip evaluation");
+    }
+    const config = this.config;
     const minLines = unitType === IndexUnitType.BLOCK
       ? Math.max(indexConfig.blockMinLines, config.minBlockLines ?? 0)
       : config.minLines;
@@ -225,8 +235,7 @@ export class JavaExtractor implements LanguageExtractor {
     bodyNode: Parser.SyntaxNode,
     source: string,
     file: string,
-    parentFunction: IndexUnit,
-    config: DryConfig
+    parentFunction: IndexUnit
   ): IndexUnit[] {
     const blocks: IndexUnit[] = [];
 
@@ -235,7 +244,7 @@ export class JavaExtractor implements LanguageExtractor {
         const startLine = n.startPosition.row;
         const endLine = n.endPosition.row;
         const lineCount = endLine - startLine;
-        if (this.shouldSkip(IndexUnitType.BLOCK, parentFunction.name, lineCount, config)) {
+        if (this.shouldSkip(IndexUnitType.BLOCK, parentFunction.name, lineCount)) {
           return;
         }
         if (lineCount >= indexConfig.blockMinLines) {

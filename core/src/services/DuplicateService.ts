@@ -2,17 +2,22 @@ import debug from "debug";
 import shortUuid from "short-uuid";
 import { cosineSimilarity } from "@langchain/core/utils/math";
 import { DryScanServiceDeps } from "./types";
-import { DryConfig } from "../config/dryconfig";
 import { DuplicateAnalysisResult, DuplicateGroup, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { pairKeyForUnits, parsePairKey, pairKeyMatches } from "../pairs";
+import { configStore } from "../config/configStore";
+import { DryConfig } from "../config/dryconfig";
 
 const log = debug("DryScan:DuplicateService");
 
 export class DuplicateService {
+  private config?: DryConfig;
+
   constructor(private readonly deps: DryScanServiceDeps) {}
 
-  async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
+  async findDuplicates(): Promise<DuplicateAnalysisResult> {
+    this.config = await configStore.get(this.deps.repoPath);
+    const config = this.config;
     const allUnits = await this.deps.db.getAllUnits();
     const unitsWithEmbeddings = allUnits.filter((unit) => unit.embedding && unit.embedding.length > 0);
 
@@ -21,9 +26,9 @@ export class DuplicateService {
       return { duplicates: [], score };
     }
 
-    const thresholds = this.resolveThresholds(config.threshold);
+  const thresholds = this.resolveThresholds(config.threshold);
     const duplicates = this.computeDuplicates(unitsWithEmbeddings, thresholds);
-    const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group, config));
+  const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
     log("Found %d duplicate groups", filteredDuplicates.length);
 
     const score = this.computeDuplicationScore(filteredDuplicates, allUnits);
@@ -101,8 +106,9 @@ export class DuplicateService {
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
 
-  private isGroupExcluded(group: DuplicateGroup, config: DryConfig): boolean {
-    if (!config.excludedPairs || config.excludedPairs.length === 0) return false;
+  private isGroupExcluded(group: DuplicateGroup): boolean {
+    const config = this.config;
+    if (!config || !config.excludedPairs || config.excludedPairs.length === 0) return false;
     const key = pairKeyForUnits(group.left, group.right);
     if (!key) return false;
     const actual = parsePairKey(key);

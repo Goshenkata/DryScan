@@ -12,12 +12,11 @@ export class UpdateService {
   ) {}
 
   async updateIndex(): Promise<void> {
-    const config = this.deps.config;
     const extractor = await this.deps.getExtractor();
     await this.deps.ensureDb();
 
     try {
-      await performIncrementalUpdate(this.deps.repoPath, extractor, this.deps.db, config);
+      await performIncrementalUpdate(this.deps.repoPath, extractor, this.deps.db);
       await this.exclusionService.cleanupExcludedFiles();
     } catch (err) {
       log("Error during index update:", err);

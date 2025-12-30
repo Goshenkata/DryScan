@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import {
   DryScan,
   applyExclusionFromLatestReport,
-  resolveDryConfig,
+  configStore,
 } from '@dryscan/core';
 import { resolve } from 'path';
 import { handleDupesCommand } from './dupes.js';
@@ -21,8 +21,8 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const config = await resolveDryConfig(repoPath);
-    const scanner = new DryScan(repoPath, config);
+    await configStore.init(repoPath);
+    const scanner = new DryScan(repoPath);
     await scanner.init();
     console.log('DryScan initialized successfully');
   });
@@ -33,8 +33,8 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const config = await resolveDryConfig(repoPath);
-    const scanner = new DryScan(repoPath, config);
+    await configStore.init(repoPath);
+    const scanner = new DryScan(repoPath);
     await scanner.updateIndex();
     console.log('DryScan index updated successfully');
   });
@@ -70,8 +70,8 @@ program
   .argument('[path]', 'Repository path', '.')
   .action(async (path: string) => {
     const repoPath = resolve(path);
-    const config = await resolveDryConfig(repoPath);
-    const scanner = new DryScan(repoPath, config);
+    await configStore.init(repoPath);
+    const scanner = new DryScan(repoPath);
     const { kept, removed } = await scanner.cleanExclusions();
     console.log(`Clean complete. Kept ${kept} exclusions, removed ${removed}.`);
   });

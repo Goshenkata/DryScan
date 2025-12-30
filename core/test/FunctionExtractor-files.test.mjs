@@ -3,7 +3,7 @@ import assert from "node:assert";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { IndexUnitExtractor, DEFAULT_CONFIG } from "../dist/index.js";
+import { IndexUnitExtractor, DEFAULT_CONFIG, configStore } from "../dist/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,7 +17,8 @@ describe("IndexUnitExtractor - File Management", () => {
 
   beforeEach(async () => {
     await fs.mkdir(testDir, { recursive: true });
-    extractor = new IndexUnitExtractor(testDir, { ...DEFAULT_CONFIG });
+    await configStore.init(testDir, { ...DEFAULT_CONFIG });
+    extractor = new IndexUnitExtractor(testDir);
   });
 
   afterEach(async () => {

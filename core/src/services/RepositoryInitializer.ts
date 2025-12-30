@@ -7,7 +7,7 @@ import { IndexUnit } from "../types";
 import { addEmbedding } from "../DryScanUpdater";
 import { FileEntity } from "../db/entities/FileEntity";
 import { IndexUnitExtractor } from "../IndexUnitExtractor";
-import { DryConfig } from "../config/dryconfig";
+import { configStore } from "../config/configStore";
 
 const log = debug("DryScan:InitService");
 
@@ -22,7 +22,6 @@ export class RepositoryInitializer {
   ) {}
 
   async init(options?: InitOptions): Promise<void> {
-    const config = this.deps.config;
     const extractor = await this.deps.getExtractor();
     await this.ensureDatabase();
 
@@ -31,7 +30,7 @@ export class RepositoryInitializer {
     log("Phase 2: Resolving internal dependencies for methods...");
     await this.applyDependencies(extractor);
     log("Phase 3: Computing embeddings for all units...");
-    await this.computeEmbeddings(config, options?.skipEmbeddings === true);
+    await this.computeEmbeddings(options?.skipEmbeddings === true);
     log("Phase 4: Tracking files...");
     await this.trackFiles(extractor);
     await this.exclusionService.cleanupExcludedFiles();
@@ -53,14 +52,15 @@ export class RepositoryInitializer {
     await this.deps.db.updateUnits(updated);
   }
 
-  private async computeEmbeddings(config: DryConfig, skipEmbeddings: boolean): Promise<void> {
+  private async computeEmbeddings(skipEmbeddings: boolean): Promise<void> {
     if (skipEmbeddings) {
       log("Skipping embedding computation by request.");
       return;
     }
+    const config = await configStore.get(this.deps.repoPath);
     const allUnits: IndexUnit[] = await this.deps.db.getAllUnits();
     log("Computing embeddings for %d units...", allUnits.length);
-    const updated: IndexUnit[] = await Promise.all(allUnits.map((unit) => addEmbedding(unit, config)));
+    const updated: IndexUnit[] = await Promise.all(allUnits.map((unit) => addEmbedding(this.deps.repoPath, unit)));
     await this.deps.db.updateUnits(updated);
   }
 

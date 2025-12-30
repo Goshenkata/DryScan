@@ -1,14 +1,17 @@
-import { DryConfig, saveDryConfig } from "../config/dryconfig";
+import { DryConfig } from "../config/dryconfig";
+import { configStore } from "../config/configStore";
 import { DryScanServiceDeps } from "./types";
 import { IndexUnitType } from "../types";
 import { pairKeyForUnits, parsePairKey, pairKeyMatches, ParsedPairKey } from "../pairs";
 import { minimatch } from "minimatch";
 
 export class ExclusionService {
+  private config?: DryConfig;
+
   constructor(private readonly deps: DryScanServiceDeps) {}
 
   async cleanupExcludedFiles(): Promise<void> {
-    const config = this.deps.config;
+    const config = await this.loadConfig();
     if (!config.excludedPaths || config.excludedPaths.length === 0) return;
 
     const units = await this.deps.db.getAllUnits();
@@ -16,14 +19,14 @@ export class ExclusionService {
 
     const unitPathsToRemove = new Set<string>();
     for (const unit of units) {
-      if (this.pathExcluded(unit.filePath, config)) {
+      if (this.pathExcluded(unit.filePath)) {
         unitPathsToRemove.add(unit.filePath);
       }
     }
 
     const filePathsToRemove = new Set<string>();
     for (const file of files) {
-      if (this.pathExcluded(file.filePath, config)) {
+      if (this.pathExcluded(file.filePath)) {
         filePathsToRemove.add(file.filePath);
       }
     }
@@ -36,7 +39,7 @@ export class ExclusionService {
   }
 
   async cleanExclusions(): Promise<{ removed: number; kept: number }> {
-    const config = this.deps.config;
+    const config = await this.loadConfig();
     await this.deps.ensureDb();
     const units = await this.deps.db.getAllUnits();
 
@@ -66,14 +69,15 @@ export class ExclusionService {
     }
 
     const nextConfig: DryConfig = { ...config, excludedPairs: kept };
-    await saveDryConfig(this.deps.repoPath, nextConfig);
-    this.deps.config = nextConfig;
+    await configStore.save(this.deps.repoPath, nextConfig);
+    this.config = nextConfig;
 
     return { removed: removed.length, kept: kept.length };
   }
 
-  private pathExcluded(filePath: string, config: DryConfig): boolean {
-    if (!config.excludedPaths || config.excludedPaths.length === 0) return false;
+  private pathExcluded(filePath: string): boolean {
+    const config = this.config;
+    if (!config || !config.excludedPaths || config.excludedPaths.length === 0) return false;
     return config.excludedPaths.some((pattern) => minimatch(filePath, pattern, { dot: true }));
   }
 
@@ -90,5 +94,10 @@ export class ExclusionService {
       }
     }
     return pairs;
+  }
+
+  private async loadConfig(): Promise<DryConfig> {
+    this.config = await configStore.get(this.deps.repoPath);
+    return this.config;
   }
 }

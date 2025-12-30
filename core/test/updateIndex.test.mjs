@@ -5,7 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
-import { DryScan, DryScanDatabase, detectFileChanges, performIncrementalUpdate, IndexUnitExtractor, DEFAULT_CONFIG, IndexUnitType } from "../dist/index.js";
+import { DryScan, DryScanDatabase, detectFileChanges, performIncrementalUpdate, IndexUnitExtractor, DEFAULT_CONFIG, IndexUnitType, configStore } from "../dist/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,7 +35,8 @@ describe("updateIndex", () => {
       `package temp;\n\npublic class Test {\n  public String hello() { return "world"; }\n  public String goodbye() { return "farewell"; }\n}`
     );
 
-    dryScan = new DryScan(testRepoPath, baseConfig());
+    await configStore.init(testRepoPath, baseConfig());
+    dryScan = new DryScan(testRepoPath);
     db = new DryScanDatabase();
   });
 
@@ -262,7 +263,8 @@ describe("DryScanUpdater edge cases and errors", () => {
   let db;
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "dryscan-test-"));
-    extractor = new IndexUnitExtractor(tempDir, baseConfig());
+    await configStore.init(tempDir, baseConfig());
+    extractor = new IndexUnitExtractor(tempDir);
     db = {
       getAllFiles: async () => [],
       getAllUnits: async () => [],

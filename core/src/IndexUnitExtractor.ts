@@ -7,8 +7,9 @@ import { IndexUnit, IndexUnitType } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
 import { JavaExtractor } from "./extractors/java";
 import { minimatch } from "minimatch";
-import { DryConfig } from "./config/dryconfig";
 import { FILE_CHECKSUM_ALGO } from "./const";
+import { configStore } from "./config/configStore";
+import { DryConfig } from "./config/dryconfig";
 
 const log = debug("DryScan:Extractor");
 
@@ -17,8 +18,8 @@ export { LanguageExtractor } from "./extractors/LanguageExtractor";
  * Returns the default set of language extractors supported by DryScan.
  * Extend/override by passing custom extractors into the IndexUnitExtractor constructor.
  */
-export function defaultExtractors(): LanguageExtractor[] {
-  return [new JavaExtractor()];
+export function defaultExtractors(repoPath: string): LanguageExtractor[] {
+  return [new JavaExtractor(repoPath)];
 }
 
 /**
@@ -28,32 +29,22 @@ export function defaultExtractors(): LanguageExtractor[] {
 export class IndexUnitExtractor {
   private readonly root: string;
   readonly extractors: LanguageExtractor[];
-  private config: DryConfig;
+  private config?: DryConfig;
 
   constructor(
     rootPath: string,
-    config: DryConfig,
     extractors?: LanguageExtractor[]
   ) {
     this.root = rootPath;
-    this.extractors = extractors ?? defaultExtractors();
-    this.config = config;
+    this.extractors = extractors ?? defaultExtractors(rootPath);
     log("Initialized extractor for %s", this.root);
-  }
-
-  /**
-   * Updates the extractor configuration (e.g., exclusion globs).
-   * Callers can change config between runs without re-creating the extractor.
-   */
-  setConfig(config: DryConfig): void {
-    this.config = config;
-    log("Extractor config updated");
   }
 
   /**
    * Lists all supported source files from a path. Honors exclusion globs from config.
    */
   async listSourceFiles(dirPath: string): Promise<string[]> {
+    await this.loadConfig();
     const fullPath = path.isAbsolute(dirPath)
       ? dirPath
       : path.join(this.root, dirPath);
@@ -82,6 +73,7 @@ export class IndexUnitExtractor {
    * Recursively walks a directory and collects supported files.
    */
   private async listSourceFilesInDirectory(dir: string): Promise<string[]> {
+    await this.loadConfig();
     const files: string[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
@@ -125,6 +117,7 @@ export class IndexUnitExtractor {
    * The returned units have repo-relative file paths and no embedding attached.
    */
   async scan(targetPath: string): Promise<IndexUnit[]> {
+    await this.loadConfig();
     const fullPath = path.isAbsolute(targetPath)
       ? targetPath
       : path.join(this.root, targetPath);
@@ -254,6 +247,7 @@ export class IndexUnitExtractor {
    * Scans a directory recursively, extracting units from supported files while honoring exclusions.
    */
   private async scanDirectory(dir: string): Promise<IndexUnit[]> {
+    await this.loadConfig();
     const out: IndexUnit[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
@@ -288,6 +282,7 @@ export class IndexUnitExtractor {
    * Optionally throws when the file type is unsupported (used when scanning an explicit file).
    */
   private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<IndexUnit[]> {
+    await this.loadConfig();
     const extractor = this.extractors.find(ex => ex.supports(filePath));
     if (!extractor) {
       if (throwOnUnsupported) {
@@ -301,7 +296,7 @@ export class IndexUnitExtractor {
       return [];
     }
     const source = await fs.readFile(filePath, "utf8");
-    const units = await extractor.extractFromText(rel, source, this.config);
+    const units = await extractor.extractFromText(rel, source);
     log("Extracted %d units from %s", units.length, rel);
     return units.map(unit => ({
       ...unit,
@@ -322,8 +317,13 @@ export class IndexUnitExtractor {
    * Returns true if a repo-relative path matches any configured exclusion glob.
    */
   private shouldExclude(relPath: string): boolean {
-    const patterns = this.config.excludedPaths || [];
+    const config = this.config;
+    const patterns = config?.excludedPaths || [];
     if (patterns.length === 0) return false;
     return patterns.some((pattern) => minimatch(relPath, pattern, { dot: true }));
+  }
+
+  private async loadConfig(): Promise<void> {
+    this.config = await configStore.get(this.root);
   }
 }

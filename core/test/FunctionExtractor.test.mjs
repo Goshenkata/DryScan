@@ -1,10 +1,17 @@
 import { expect } from 'chai';
-import { IndexUnitExtractor, IndexUnitType, DEFAULT_CONFIG } from '../dist/index.js';
+import { IndexUnitExtractor, IndexUnitType, DEFAULT_CONFIG, configStore } from '../dist/index.js';
+
+const repoPath = '/fake/root';
+
+async function createExtractor(overrides = {}) {
+  await configStore.init(repoPath, { ...DEFAULT_CONFIG, ...overrides });
+  return new IndexUnitExtractor(repoPath);
+}
 
 describe('IndexUnitExtractor - Internal Dependencies', () => {
   describe('Error handling and edge cases', () => {
     it('throws if listSourceFiles path does not exist', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       try {
         await extractor.listSourceFiles('missing.java');
         throw new Error('Should have thrown');
@@ -14,7 +21,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     });
 
     it('throws if scan path does not exist', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       try {
         await extractor.scan('missing.java');
         throw new Error('Should have thrown');
@@ -24,14 +31,14 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     });
 
     it('returns empty array if tryScanSupportedFile is called with unsupported file and throwOnUnsupported=false', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       extractor.extractors = [];
       const result = await extractor.tryScanSupportedFile('unsupported.xyz', false);
       expect(result).to.be.an('array').that.is.empty;
     });
 
     it('throws if tryScanSupportedFile is called with unsupported file and throwOnUnsupported=true', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       extractor.extractors = [];
       try {
         await extractor.tryScanSupportedFile('unsupported.xyz', true);
@@ -46,7 +53,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
   
   describe('applyInternalDependencies', () => {
     it('resolves simple function calls', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       
       const allFunctions = [
         { id: 'function:helper:1-3', name: 'helper', unitType: IndexUnitType.FUNCTION, filePath: 'file.java', startLine: 1, endLine: 3, code: 'void helper() {}' },
@@ -64,7 +71,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     });
 
     it('handles multiple internal calls', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       
       const allFunctions = [
         { id: 'function:helper1:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper1', filePath: 'file.java', startLine: 1, endLine: 3, code: 'void helper1() {}' },
@@ -81,7 +88,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     });
 
     it('ignores external library calls', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       
       const allFunctions = [
         { id: 'function:doWork:1-5', unitType: IndexUnitType.FUNCTION, name: 'doWork', filePath: 'file.java', startLine: 1, endLine: 5, code: 'void doWork() { System.out.println("hi"); }' }
@@ -96,7 +103,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     });
 
     it('prefers same-file matches for ambiguous names', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       
       const allFunctions = [
         { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file1.java', startLine: 1, endLine: 3, code: 'void helper() {}' },
@@ -113,7 +120,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     });
 
     it('handles Java qualified names', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       
       const allFunctions = [
         { id: 'function:Sample.helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'Sample.helper', filePath: 'Sample.java', startLine: 1, endLine: 3, code: 'public void helper() {}' },
@@ -130,7 +137,7 @@ describe('IndexUnitExtractor - Internal Dependencies', () => {
     });
 
     it('avoids duplicate internal functions', async () => {
-      const extractor = new IndexUnitExtractor('/fake/root', { ...DEFAULT_CONFIG });
+      const extractor = await createExtractor();
       
       const allFunctions = [
         { id: 'function:helper:1-3', unitType: IndexUnitType.FUNCTION, name: 'helper', filePath: 'file.java', startLine: 1, endLine: 3, code: 'void helper() {}' },
