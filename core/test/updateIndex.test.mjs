@@ -5,7 +5,13 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
-import { DryScan, DryScanDatabase, detectFileChanges, performIncrementalUpdate, IndexUnitExtractor, DEFAULT_CONFIG, IndexUnitType, configStore } from "../dist/index.js";
+import { DryScan } from "../src/DryScan.ts";
+import { DryScanDatabase } from "../src/db/DryScanDatabase.ts";
+import { detectFileChanges, performIncrementalUpdate } from "../src/DryScanUpdater.ts";
+import { IndexUnitExtractor } from "../src/IndexUnitExtractor.ts";
+import { DEFAULT_CONFIG } from "../src/config/dryconfig.ts";
+import { IndexUnitType } from "../src/types.ts";
+import { configStore } from "../src/config/configStore.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -5,8 +5,8 @@ import {
   pairKeyMatches,
   canonicalFunctionSignature,
   normalizedBlockHash,
-  IndexUnitType,
-} from "../dist/index.js";
+} from "../src/pairs.ts";
+import { IndexUnitType } from "../src/types.ts";
 
 describe("pair key utilities", () => {
   it("builds order-insensitive class pair keys and matches globs", () => {

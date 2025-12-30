@@ -1,7 +1,9 @@
-import { expect } from 'chai';
-import path from 'path';
-import fs from 'fs/promises';
-import { JavaExtractor, DEFAULT_CONFIG, configStore } from '../../dist/index.js';
+import { expect } from "chai";
+import path from "path";
+import fs from "fs/promises";
+import { JavaExtractor } from "../../src/extractors/java.ts";
+import { DEFAULT_CONFIG } from "../../src/config/dryconfig.ts";
+import { configStore } from "../../src/config/configStore.ts";
 
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 const repoRoot = resourcesDir;

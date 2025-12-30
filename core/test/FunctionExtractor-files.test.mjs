@@ -3,7 +3,8 @@ import assert from "node:assert";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { IndexUnitExtractor, configStore } from "../dist/index.js";
+import { IndexUnitExtractor } from "../src/IndexUnitExtractor.ts";
+import { configStore } from "../src/config/configStore.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

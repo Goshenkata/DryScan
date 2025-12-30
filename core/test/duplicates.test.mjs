@@ -1,6 +1,9 @@
 import { expect } from "chai";
 import sinon from "sinon";
-import { DryScan, IndexUnitType, DEFAULT_CONFIG, configStore } from "../dist/index.js";
+import { DryScan } from "../src/DryScan.ts";
+import { IndexUnitType } from "../src/types.ts";
+import { DEFAULT_CONFIG } from "../src/config/dryconfig.ts";
+import { configStore } from "../src/config/configStore.ts";
 import upath from "upath";
 import fs from "fs/promises";
 import os from "os";

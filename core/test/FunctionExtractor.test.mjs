@@ -1,5 +1,7 @@
 import { expect } from 'chai';
-import { IndexUnitExtractor, IndexUnitType, configStore } from '../dist/index.js';
+import { IndexUnitExtractor } from "../src/IndexUnitExtractor.ts";
+import { IndexUnitType } from "../src/types.ts";
+import { configStore } from "../src/config/configStore.ts";
 
 const repoPath = '/fake/root';
 

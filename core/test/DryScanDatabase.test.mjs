@@ -1,6 +1,6 @@
 
 import { expect } from "chai";
-import { DryScanDatabase } from "../dist/index.js";
+import { DryScanDatabase } from "../src/db/DryScanDatabase.ts";
 
 describe("DryScanDatabase - Error Handling", () => {
   let db;

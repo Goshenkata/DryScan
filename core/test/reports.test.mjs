@@ -7,10 +7,10 @@ import {
   writeDuplicateReport,
   loadLatestReport,
   applyExclusionFromLatestReport,
-  pairKeyForUnits,
-  loadDryConfig,
-  IndexUnitType,
-} from "../dist/index.js";
+} from "../src/reports.ts";
+import { pairKeyForUnits } from "../src/pairs.ts";
+import { loadDryConfig } from "../src/config/dryconfig.ts";
+import { IndexUnitType } from "../src/types.ts";
 
 function makeSide(name, filePath) {
   return {

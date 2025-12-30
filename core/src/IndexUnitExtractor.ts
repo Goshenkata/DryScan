@@ -13,7 +13,7 @@ import { DryConfig } from "./config/dryconfig";
 
 const log = debug("DryScan:Extractor");
 
-export { LanguageExtractor } from "./extractors/LanguageExtractor";
+export type { LanguageExtractor } from "./extractors/LanguageExtractor";
 /**
  * Returns the default set of language extractors supported by DryScan.
  * Extend/override by passing custom extractors into the IndexUnitExtractor constructor.
