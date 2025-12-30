@@ -22,7 +22,6 @@ export class DryScan {
   repoPath: string;
   private extractor?: IndexUnitExtractor;
   private db: DryScanDatabase;
-  private readonly configReady: Promise<DryConfig>;
   private readonly services: {
     initializer: RepositoryInitializer;
     updater: UpdateService;
@@ -37,7 +36,6 @@ export class DryScan {
     db?: DryScanDatabase
   ) {
     this.repoPath = repoPath;
-    this.configReady = configStore.get(repoPath);
     this.extractor = extractor;
     this.db = db ?? new DryScanDatabase();
 
@@ -65,7 +63,6 @@ export class DryScan {
    */
   async init(options?: InitOptions): Promise<void> {
     log("Initializing DryScan repository at", this.repoPath);
-    await this.configReady;
     if (await this.isInitialized()) {
       log("Repository already initialized.");
       return;
@@ -90,7 +87,6 @@ export class DryScan {
    */
   async updateIndex(): Promise<void> {
     log("Updating DryScan index at", this.repoPath);
-    await this.configReady;
     await this.services.updater.updateIndex();
     log("Index update complete.");
   }
@@ -104,8 +100,7 @@ export class DryScan {
    * @returns Analysis result with duplicate groups and duplication score
    */
   async findDuplicates(): Promise<DuplicateAnalysisResult> {
-    await this.configReady;
-    const config = await configStore.get(this.repoPath);
+    const config = await this.loadConfig();
     log("Finding duplicates using configured threshold", config.threshold);
     await this.ensureExtractor();
     await this.ensureDatabase();
@@ -122,7 +117,6 @@ export class DryScan {
    * Runs an update first to ensure the index reflects current code.
    */
   async cleanExclusions(): Promise<{ removed: number; kept: number }> {
-    await this.configReady;
     await this.updateIndex();
     return this.services.exclusion.cleanExclusions();
   }
@@ -142,6 +136,10 @@ export class DryScan {
     const dbPath = upath.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
     await fs.mkdir(upath.dirname(dbPath), { recursive: true });
     await this.db.init(dbPath);
+  }
+
+  private async loadConfig(): Promise<DryConfig> {
+    return configStore.get(this.repoPath);
   }
 
   private async isInitialized(): Promise<boolean> {

@@ -16,15 +16,6 @@ const log = debug("DryScan:Updater");
  * This module contains all incremental update logic for DryScan.
  * Separated from DryScan.ts to keep that file focused on core operations.
  * 
- * Responsibilities:
- * - File change detection (added, modified, deleted)
- * - Incremental function extraction
- * - File tracking metadata management
- * - Semantic embedding computation
- * - Orchestrating the complete update workflow
- */
-
-/**
  * Represents the result of change detection.
  * Categorizes files into added, changed, deleted, and unchanged.
  */
