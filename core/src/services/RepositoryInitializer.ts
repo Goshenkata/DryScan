@@ -7,7 +7,6 @@ import { IndexUnit } from "../types";
 import { addEmbedding } from "../DryScanUpdater";
 import { FileEntity } from "../db/entities/FileEntity";
 import { IndexUnitExtractor } from "../IndexUnitExtractor";
-import { configStore } from "../config/configStore";
 
 const log = debug("DryScan:InitService");
 
@@ -57,7 +56,6 @@ export class RepositoryInitializer {
       log("Skipping embedding computation by request.");
       return;
     }
-    const config = await configStore.get(this.deps.repoPath);
     const allUnits: IndexUnit[] = await this.deps.db.getAllUnits();
     log("Computing embeddings for %d units...", allUnits.length);
     const updated: IndexUnit[] = await Promise.all(allUnits.map((unit) => addEmbedding(this.deps.repoPath, unit)));
