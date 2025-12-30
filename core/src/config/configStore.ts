@@ -3,14 +3,10 @@ import { DryConfig, resolveDryConfig, saveDryConfig } from "./dryconfig";
 
 class ConfigStore {
   private readonly cache = new Map<string, DryConfig>();
-  private readonly overrides = new Map<string, Partial<DryConfig> | undefined>();
   private readonly loading = new Map<string, Promise<DryConfig>>();
 
-  async init(repoPath: string, overrides?: Partial<DryConfig>): Promise<DryConfig> {
+  async init(repoPath: string): Promise<DryConfig> {
     const key = this.normalize(repoPath);
-    if (overrides !== undefined) {
-      this.overrides.set(key, overrides);
-    }
     return this.load(key, repoPath);
   }
 
@@ -37,7 +33,7 @@ class ConfigStore {
     const existing = this.loading.get(key);
     if (existing) return existing;
 
-    const promise = resolveDryConfig(repoPath, this.overrides.get(key)).then((config) => {
+    const promise = resolveDryConfig(repoPath).then((config) => {
       this.cache.set(key, config);
       this.loading.delete(key);
       return config;

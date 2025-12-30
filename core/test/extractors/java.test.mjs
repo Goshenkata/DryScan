@@ -6,8 +6,16 @@ import { JavaExtractor, DEFAULT_CONFIG, configStore } from '../../dist/index.js'
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 const repoRoot = resourcesDir;
 
+async function writeConfig(overrides = {}) {
+  const next = { ...DEFAULT_CONFIG, ...overrides };
+  await fs.writeFile(path.join(repoRoot, '.dryconfig.json'), JSON.stringify(next, null, 2), 'utf8');
+}
+
 async function createExtractor(overrides = {}) {
-  await configStore.init(repoRoot, { ...DEFAULT_CONFIG, ...overrides });
+  if (Object.keys(overrides).length > 0) {
+    await writeConfig(overrides);
+  }
+  await configStore.init(repoRoot);
   return new JavaExtractor(repoRoot);
 }
 
@@ -26,7 +34,7 @@ describe('JavaExtractor', () => {
     });
   });
   it('supports only .java', async () => {
-    await configStore.init(repoRoot, DEFAULT_CONFIG);
+    await configStore.init(repoRoot);
     const ex = new JavaExtractor(repoRoot);
     expect(ex.supports('Main.java')).to.equal(true);
     expect(ex.supports('Main.py')).to.equal(false);

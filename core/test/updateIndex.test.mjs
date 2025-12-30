@@ -1,5 +1,5 @@
 import sinon from "sinon";
-import { describe, it, beforeEach, afterEach } from "node:test";
+import { describe, it, beforeEach, afterEach, after } from "node:test";
 import assert from "node:assert";
 import fs from "fs/promises";
 import path from "path";
@@ -10,6 +10,9 @@ import { DryScan, DryScanDatabase, detectFileChanges, performIncrementalUpdate, 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const baseConfig = () => ({ ...DEFAULT_CONFIG, minLines: 0 });
+const writeConfig = async (repoPath, config) => {
+  await fs.writeFile(path.join(repoPath, ".dryconfig.json"), JSON.stringify(config, null, 2), "utf8");
+};
 
 /**
  * Test suite for updateIndex functionality.
@@ -35,7 +38,8 @@ describe("updateIndex", () => {
       `package temp;\n\npublic class Test {\n  public String hello() { return "world"; }\n  public String goodbye() { return "farewell"; }\n}`
     );
 
-    await configStore.init(testRepoPath, baseConfig());
+    await writeConfig(testRepoPath, baseConfig());
+    await configStore.init(testRepoPath);
     dryScan = new DryScan(testRepoPath);
     db = new DryScanDatabase();
   });
@@ -263,7 +267,8 @@ describe("DryScanUpdater edge cases and errors", () => {
   let db;
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "dryscan-test-"));
-    await configStore.init(tempDir, baseConfig());
+    await writeConfig(tempDir, baseConfig());
+    await configStore.init(tempDir);
     extractor = new IndexUnitExtractor(tempDir);
     db = {
       getAllFiles: async () => [],

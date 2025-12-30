@@ -11,6 +11,11 @@ describe("DryScan - Duplicate Detection", function() {
   let dryScan;
 
   // Helper to create a DryScan instance with a stubbed DB
+  async function writeConfig(dir, overrides = {}) {
+    const next = { ...DEFAULT_CONFIG, ...overrides };
+    await fs.writeFile(upath.join(dir, ".dryconfig.json"), JSON.stringify(next, null, 2), "utf8");
+  }
+
   async function createDryScanWithStubbedDB(testDir, dbOverrides = {}, configOverrides = {}) {
     const baseDb = {
       isInitialized: () => false,
@@ -20,15 +25,16 @@ describe("DryScan - Duplicate Detection", function() {
       updateUnits: async () => {},
       saveFiles: async () => {},
     };
-    const config = { ...DEFAULT_CONFIG, ...configOverrides };
-    await configStore.init(testDir, config);
+    await writeConfig(testDir, configOverrides);
+    await configStore.init(testDir);
     return new DryScan(testDir, undefined, { ...baseDb, ...dbOverrides });
   }
 
   beforeEach(async () => {
     // Create a temporary directory for each test
     testDir = await fs.mkdtemp(upath.join(os.tmpdir(), "dryscan-test-"));
-    await configStore.init(testDir, { ...DEFAULT_CONFIG });
+    await writeConfig(testDir, {});
+    await configStore.init(testDir);
     dryScan = new DryScan(testDir);
   });
 

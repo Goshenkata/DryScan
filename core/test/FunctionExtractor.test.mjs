@@ -1,10 +1,10 @@
 import { expect } from 'chai';
-import { IndexUnitExtractor, IndexUnitType, DEFAULT_CONFIG, configStore } from '../dist/index.js';
+import { IndexUnitExtractor, IndexUnitType, configStore } from '../dist/index.js';
 
 const repoPath = '/fake/root';
 
-async function createExtractor(overrides = {}) {
-  await configStore.init(repoPath, { ...DEFAULT_CONFIG, ...overrides });
+async function createExtractor() {
+  await configStore.init(repoPath);
   return new IndexUnitExtractor(repoPath);
 }
 
