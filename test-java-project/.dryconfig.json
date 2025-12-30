@@ -1,10 +1,11 @@
 {
   "excludedPaths": [],
   "excludedPairs": [
-    "function|AccountService.getUserById(arity:1)|UserService.getUserById(arity:1)"
+    "function|AccountService.getUserById(arity:1)|UserService.getUserById(arity:1)",
+    "class|src/main/java/com/example/demo/service/AccountService.java|src/main/java/com/example/demo/service/UserService.java"
   ],
-  "maxLines": 500,
-  "maxBlockLines": 200,
+  "maxLines": 3,
+  "maxBlockLines": 5,
   "threshold": 0.85,
   "embeddingModel": "embeddinggemma",
   "embeddingBaseUrl": "http://localhost:11434"
