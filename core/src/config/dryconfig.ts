@@ -16,8 +16,8 @@ export interface DryConfig {
 export const DEFAULT_CONFIG: DryConfig = {
   excludedPaths: [],
   excludedPairs: [],
-  maxLines: 500,
-  maxBlockLines: 200,
+  maxLines: 3,
+  maxBlockLines: 5,
   threshold: 0.85,
   embeddingModel: "embeddinggemma",
   embeddingBaseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",

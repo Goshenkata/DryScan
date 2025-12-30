@@ -4,7 +4,15 @@ import { resolve, join } from "path";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import Handlebars from "handlebars";
-import { DuplicateGroup, DuplicationScore, applyExclusionFromLatestReport } from "@dryscan/core";
+import {
+  DuplicateGroup,
+  DuplicationScore,
+  applyExclusionFromLatestReport,
+  DryScan,
+  buildDuplicateReport,
+  writeDuplicateReport,
+  resolveDryConfig,
+} from "@dryscan/core";
 
 export interface UiServerOptions {
   port?: number;
@@ -32,15 +40,21 @@ export class DuplicateReportServer {
   private server?: Server;
   private readonly templatePromise: Promise<Handlebars.TemplateDelegate>;
   private readonly repoRoot: string;
+  private state: { duplicates: DuplicateGroup[]; score: DuplicationScore; threshold: number };
+  private regenerating?: Promise<void>;
 
   constructor(private readonly options: UiServerOptions) {
     this.port = options.port ?? defaultPort;
     this.templatePromise = loadTemplate();
     this.repoRoot = resolve(options.repoPath);
+    this.state = {
+      duplicates: options.duplicates,
+      score: options.score,
+      threshold: options.threshold,
+    };
   }
 
   async start(): Promise<void> {
-    const { threshold, duplicates, score } = this.options;
     const template = await this.templatePromise;
 
     this.server = createServer(async (req, res) => {
@@ -49,7 +63,7 @@ export class DuplicateReportServer {
 
       if (url.pathname === "/api/duplicates") {
         res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify(duplicates));
+        res.end(JSON.stringify(this.state.duplicates));
         return;
       }
 
@@ -64,6 +78,7 @@ export class DuplicateReportServer {
           }
 
           const result = await applyExclusionFromLatestReport(this.repoRoot, id);
+          await this.regenerateReport();
           res.setHeader("content-type", "application/json");
           res.end(JSON.stringify({
             exclusion: result.exclusion,
@@ -72,6 +87,18 @@ export class DuplicateReportServer {
         } catch (err: any) {
           res.statusCode = 400;
           res.end(JSON.stringify({ error: err?.message || "Unable to apply exclusion" }));
+        }
+        return;
+      }
+
+      if (url.pathname === "/api/regenerate" && req.method === "POST") {
+        try {
+          await this.regenerateReport();
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ status: "ok" }));
+        } catch (err: any) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: err?.message || "Unable to regenerate report" }));
         }
         return;
       }
@@ -104,9 +131,9 @@ export class DuplicateReportServer {
 
         res.setHeader("content-type", "text/html; charset=utf-8");
         const html = template({
-          thresholdPct: Math.round(threshold * 100),
-          duplicatesJson: JSON.stringify(duplicates),
-          score: buildScoreView(score),
+        thresholdPct: Math.round(this.state.threshold * 100),
+        duplicatesJson: JSON.stringify(this.state.duplicates),
+        score: buildScoreView(this.state.score),
         });
         res.end(html);
       } catch (err: any) {
@@ -122,6 +149,33 @@ export class DuplicateReportServer {
         console.log(`\nUI available at http://localhost:${this.port}\n`);
       });
     });
+  }
+
+  private async regenerateReport(): Promise<void> {
+    if (this.regenerating) {
+      return this.regenerating;
+    }
+
+    const run = async () => {
+      const config = await resolveDryConfig(this.repoRoot, { threshold: this.options.threshold });
+      const effectiveThreshold = this.options.threshold ?? config.threshold ?? 0.85;
+      const scanner = new DryScan(this.repoRoot, config);
+      const result = await scanner.findDuplicates(effectiveThreshold);
+      const report = buildDuplicateReport(result.duplicates, effectiveThreshold, result.score);
+      await writeDuplicateReport(this.repoRoot, report);
+      this.state = {
+        duplicates: report.duplicates,
+        score: result.score,
+        threshold: effectiveThreshold,
+      };
+    };
+
+    this.regenerating = run();
+    try {
+      await this.regenerating;
+    } finally {
+      this.regenerating = undefined;
+    }
   }
 }
 

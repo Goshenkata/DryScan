@@ -39,7 +39,7 @@ export class JavaExtractor implements LanguageExtractor {
     return this.exts.some((ext) => lower.endsWith(ext));
   }
 
-  async extractFromText(file: string, source: string, config: DryConfig): Promise<IndexUnit[]> {
+  async extractFromText(fileRelPath: string, source: string, config: DryConfig): Promise<IndexUnit[]> {
     if (!source.trim()) return [];
 
     const tree = this.parser.parse(source);
@@ -49,18 +49,19 @@ export class JavaExtractor implements LanguageExtractor {
     const visit = (node: Parser.SyntaxNode, currentClass?: IndexUnit) => {
       if (this.isClassNode(node)) {
         const className = this.getClassName(node, source) || "<anonymous>";
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        const classLength = endLine - startLine + 1;
+        const startLine = node.startPosition.row;
+        const endLine = node.endPosition.row;
+        const classLength = endLine - startLine;
         const skipClass = config.maxLines && classLength > config.maxLines;
         const classId = this.buildId(IndexUnitType.CLASS, className, startLine, endLine);
+        const code = this.stripClassBody(node, source)
         const classUnit: IndexUnit = {
           id: classId,
           name: className,
-          filePath: file,
+          filePath: fileRelPath,
           startLine,
           endLine,
-          code: this.stripClassBody(node, source),
+          code,
           unitType: IndexUnitType.CLASS,
           children: [],
         };
@@ -76,8 +77,8 @@ export class JavaExtractor implements LanguageExtractor {
       }
 
       if (this.isFunctionNode(node)) {
-        const fnUnit = this.buildFunctionUnit(node, source, file, currentClass);
-        const fnLength = fnUnit.endLine - fnUnit.startLine + 1;
+        const fnUnit = this.buildFunctionUnit(node, source, fileRelPath, currentClass);
+        const fnLength = fnUnit.endLine - fnUnit.startLine;
         const bodyNode = this.getFunctionBody(node);
         const skipFunction = (config.maxLines && fnLength > config.maxLines) ||
           isTrivialFunctionUnit(fnUnit, javaTrivialityRules, {
@@ -93,7 +94,7 @@ export class JavaExtractor implements LanguageExtractor {
         functionNodes.set(fnUnit.id, node);
 
         if (bodyNode) {
-          const blocks = this.extractBlocks(bodyNode, source, file, fnUnit, config);
+          const blocks = this.extractBlocks(bodyNode, source, fileRelPath, fnUnit, config);
           units.push(...blocks);
         }
       }
@@ -106,7 +107,7 @@ export class JavaExtractor implements LanguageExtractor {
 
     visit(tree.rootNode);
 
-    this.parsedFiles.set(file, { tree, source, functions: functionNodes });
+    this.parsedFiles.set(fileRelPath, { tree, source, functions: functionNodes });
 
     return units;
   }
@@ -177,8 +178,11 @@ export class JavaExtractor implements LanguageExtractor {
 
   private getMethodBodiesForClass(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
     const bodies: Parser.SyntaxNode[] = [];
-    for (let i = 0; i < node.namedChildCount; i++) {
-      const child = node.namedChild(i);
+    const classBody = node.children.find(child => child.type === "class_body");
+    if (!classBody) return bodies;
+    
+    for (let i = 0; i < classBody.namedChildCount; i++) {
+      const child = classBody.namedChild(i);
       if (!child) continue;
       if (child.type === "method_declaration" || child.type === "constructor_declaration") {
         const body = child.childForFieldName?.("body");
@@ -195,8 +199,8 @@ export class JavaExtractor implements LanguageExtractor {
     parentClass?: IndexUnit
   ): IndexUnit {
     const name = this.getFunctionName(node, source, parentClass) || "<anonymous>";
-    const startLine = node.startPosition.row + 1;
-    const endLine = node.endPosition.row + 1;
+    const startLine = node.startPosition.row;
+    const endLine = node.endPosition.row;
     const id = this.buildId(IndexUnitType.FUNCTION, name, startLine, endLine);
     const unit: IndexUnit = {
       id,
@@ -227,9 +231,9 @@ export class JavaExtractor implements LanguageExtractor {
 
     const visit = (n: Parser.SyntaxNode) => {
       if (this.isBlockNode(n)) {
-        const startLine = n.startPosition.row + 1;
-        const endLine = n.endPosition.row + 1;
-        const lineCount = endLine - startLine + 1;
+        const startLine = n.startPosition.row;
+        const endLine = n.endPosition.row;
+        const lineCount = endLine - startLine;
         const withinLimits = !config.maxBlockLines || lineCount <= config.maxBlockLines;
         if (lineCount >= indexConfig.blockMinLines && withinLimits) {
           const id = this.buildId(IndexUnitType.BLOCK, parentFunction.name, startLine, endLine);

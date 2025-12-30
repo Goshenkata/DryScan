@@ -172,6 +172,7 @@
       </div>
       <div class="header-right">
         <button class="toggle" id="theme-toggle"><span class="toggle-icon">🌙</span><span id="theme-label">Dark</span></button>
+         <button class="btn" id="regenerate-btn">Regenerate report</button>
       </div>
     </div>
     <section class="score-card">
@@ -276,6 +277,17 @@
       hljs.highlightAll();
       document.querySelectorAll('code.hljs').forEach(el => hljs.lineNumbersBlock(el));
     };
+
+      const regenerateReport = async () => {
+        const res = await fetch('/api/regenerate', { method: 'POST' });
+        if (!res.ok) {
+          const msg = (await res.json().catch(() => ({}))).error || 'Failed to regenerate report';
+          toast(msg);
+          return;
+        }
+        // Refresh the page to pick up the new report
+        window.location.reload();
+      };
 
     const renderGroup = (group, idx) => {
       const card = document.createElement('div');
@@ -396,7 +408,7 @@
           modal.classList.add('active');
         }
       }
-
+      
       if (target && target.dataset && target.dataset.action === 'exclude-pair') {
         const id = target.dataset.id;
         if (!id) {
@@ -417,11 +429,16 @@
           toast(body.status === 'already-present'
             ? 'Exclusion already present: ' + body.exclusion
             : 'Added exclusion: ' + body.exclusion);
+          await regenerateReport();
         } catch (err) {
           toast(err?.message || 'Unable to add exclusion');
           target.disabled = false;
         }
       }
+    });
+
+    document.getElementById('regenerate-btn')?.addEventListener('click', async () => {
+      await regenerateReport();
     });
 
     render();
