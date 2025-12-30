@@ -12,7 +12,6 @@ import {
 import { DuplicateReportServer } from './uiServer.js';
 
 const UI_PORT = 3000;
-const DEFAULT_THRESHOLD = 0.85;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let duplicatesTemplate: Handlebars.TemplateDelegate | null = null;
@@ -112,7 +111,7 @@ function toDuplicateTemplateData(
       index: index + 1,
       similarityPercent: (group.similarity * 100).toFixed(1),
       shortId: group.shortId,
-      exclusionString: group.exclusionString,
+      exclusionString: group.exclusionString ?? undefined,
       left: {
         filePath: group.left.filePath,
         startLine: group.left.startLine,
@@ -142,13 +141,10 @@ async function renderDuplicateReport(
 
 export async function handleDupesCommand(path: string, options: DupesOptions): Promise<void> {
   const repoPath = resolve(path);
-  const threshold = options.threshold ? parseFloat(options.threshold) : undefined;
-  const cliConfigOverrides = threshold !== undefined ? { threshold } : undefined;
-
-  const config = await resolveDryConfig(repoPath, cliConfigOverrides);
+  const config = await resolveDryConfig(repoPath);
   const scanner = new DryScan(repoPath, config);
-  const result = await scanner.findDuplicates(threshold);
-  const displayThreshold = threshold ?? config.threshold ?? DEFAULT_THRESHOLD;
+  const result = await scanner.findDuplicates();
+  const displayThreshold = config.threshold;
 
   const report = buildDuplicateReport(result.duplicates, displayThreshold, result.score);
   const reportPath = await writeDuplicateReport(repoPath, report);

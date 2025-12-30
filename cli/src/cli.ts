@@ -47,7 +47,6 @@ dupesCommand
   .argument('[path]', 'Repository path', '.')
   .option('--json', 'Output results as JSON')
   .option('--ui', 'Serve interactive report at http://localhost:3000')
-  .option('-t, --threshold <number>', 'Similarity threshold (0-1)')
   .action(handleDupesCommand);
 
 dupesCommand

@@ -12,6 +12,7 @@
     "clean": "rm -rf dist",
     "dev": "tsc --watch",
     "start": "node ./dist/cli.js",
+    "prepare": "npm run build",
     "test": "echo \"No tests for CLI yet\"",
     "coverage": "echo \"No coverage for CLI yet\""
   },

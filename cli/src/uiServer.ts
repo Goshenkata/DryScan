@@ -157,10 +157,10 @@ export class DuplicateReportServer {
     }
 
     const run = async () => {
-      const config = await resolveDryConfig(this.repoRoot, { threshold: this.options.threshold });
-      const effectiveThreshold = this.options.threshold ?? config.threshold ?? 0.85;
+      const config = await resolveDryConfig(this.repoRoot);
+      const effectiveThreshold = config.threshold;
       const scanner = new DryScan(this.repoRoot, config);
-      const result = await scanner.findDuplicates(effectiveThreshold);
+      const result = await scanner.findDuplicates();
       const report = buildDuplicateReport(result.duplicates, effectiveThreshold, result.score);
       await writeDuplicateReport(this.repoRoot, report);
       this.state = {

@@ -12,7 +12,7 @@ const log = debug("DryScan:DuplicateService");
 export class DuplicateService {
   constructor(private readonly deps: DryScanServiceDeps) {}
 
-  async findDuplicates(threshold: number | undefined, config: DryConfig): Promise<DuplicateAnalysisResult> {
+  async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
     const allUnits = await this.deps.db.getAllUnits();
     const unitsWithEmbeddings = allUnits.filter((unit) => unit.embedding && unit.embedding.length > 0);
 
@@ -21,7 +21,7 @@ export class DuplicateService {
       return { duplicates: [], score };
     }
 
-    const thresholds = this.resolveThresholds(threshold ?? config.threshold);
+    const thresholds = this.resolveThresholds(config.threshold);
     const duplicates = this.computeDuplicates(unitsWithEmbeddings, thresholds);
     const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group, config));
     log("Found %d duplicate groups", filteredDuplicates.length);

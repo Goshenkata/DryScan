@@ -98,13 +98,12 @@ export class DryScan {
   /**
    * Finds duplicate code blocks using cosine similarity on embeddings.
    * Automatically updates the index before searching to ensure results are current.
-   * Compares all function pairs and returns groups with similarity above threshold.
-   * 
-   * @param threshold - Minimum similarity score (0-1) to consider functions as duplicates. Default: 0.85
+   * Compares all function pairs and returns groups with similarity above the configured threshold.
+   *
    * @returns Analysis result with duplicate groups and duplication score
    */
-  async findDuplicates(threshold?: number): Promise<DuplicateAnalysisResult> {
-    log("Finding duplicates with threshold", threshold);
+  async findDuplicates(): Promise<DuplicateAnalysisResult> {
+    log("Finding duplicates using configured threshold", this.config.threshold);
     const config = this.config;
     await this.ensureExtractor();
     await this.ensureDatabase();
@@ -113,7 +112,7 @@ export class DryScan {
     await this.updateIndex();
     log("Index update complete. Proceeding with duplicate detection.");
 
-    return this.services.duplicate.findDuplicates(threshold, config);
+    return this.services.duplicate.findDuplicates(config);
   }
 
   /**
