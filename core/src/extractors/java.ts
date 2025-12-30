@@ -1,7 +1,6 @@
 import Parser from "tree-sitter";
 import Java from "tree-sitter-java";
 import { LanguageExtractor } from "./LanguageExtractor";
-import { TrivialityRules, isTrivialFunctionUnit } from "./triviality";
 import { IndexUnit, IndexUnitType } from "../types";
 import { DryConfig } from "../config/dryconfig";
 import { indexConfig } from "../config/indexConfig";
@@ -11,16 +10,6 @@ interface ParsedFile {
   source: string;
   functions: Map<string, Parser.SyntaxNode>;
 }
-
-// Java-focused triviality rules. Arrow bodies do not apply; keep heuristics narrow.
-const javaTrivialityRules: TrivialityRules = {
-  maxLines: 3,
-  getterPattern: /^(get|is)[A-Z]/,
-  setterPattern: /^set[A-Z]/,
-  allowArrowExpressionBodies: false,
-  allowReturnOnly: true,
-  allowSimpleAssignment: true,
-};
 
 export class JavaExtractor implements LanguageExtractor {
   readonly id = "java";
@@ -52,7 +41,7 @@ export class JavaExtractor implements LanguageExtractor {
         const startLine = node.startPosition.row;
         const endLine = node.endPosition.row;
         const classLength = endLine - startLine;
-        const skipClass = this.shouldSkip(classLength, config);
+        const skipClass = this.shouldSkip(IndexUnitType.CLASS, className, classLength, config);
         const classId = this.buildId(IndexUnitType.CLASS, className, startLine, endLine);
         const code = this.stripClassBody(node, source)
         const classUnit: IndexUnit = {
@@ -80,11 +69,7 @@ export class JavaExtractor implements LanguageExtractor {
         const fnUnit = this.buildFunctionUnit(node, source, fileRelPath, currentClass);
         const fnLength = fnUnit.endLine - fnUnit.startLine;
         const bodyNode = this.getFunctionBody(node);
-        const skipFunction = this.shouldSkip(fnLength, config) ||
-          isTrivialFunctionUnit(fnUnit, javaTrivialityRules, {
-            bodyNode,
-            isArrowExpression: node.type === "arrow_function",
-          });
+        const skipFunction = this.shouldSkip(IndexUnitType.FUNCTION, fnUnit.name, fnLength, config);
 
         if (skipFunction) {
           return;
@@ -192,8 +177,20 @@ export class JavaExtractor implements LanguageExtractor {
     return bodies;
   }
 
-  private shouldSkip(unitLineCount: number, config: DryConfig): boolean {
-    return config.minLines > 0 && unitLineCount < config.minLines;
+  private shouldSkip(unitType: IndexUnitType, name: string, lineCount: number, config: DryConfig): boolean {
+    const minLines = unitType === IndexUnitType.BLOCK
+      ? Math.max(indexConfig.blockMinLines, config.minBlockLines ?? 0)
+      : config.minLines;
+    const belowMin = minLines > 0 && lineCount < minLines;
+    const trivial = unitType === IndexUnitType.FUNCTION && this.isTrivialFunction(name);
+    return belowMin || trivial;
+  }
+
+  private isTrivialFunction(fullName: string): boolean {
+    const simpleName = fullName.split(".").pop() || fullName;
+    const isGetter = /^(get|is)[A-Z]/.test(simpleName);
+    const isSetter = /^set[A-Z]/.test(simpleName);
+    return isGetter || isSetter;
   }
 
   private buildFunctionUnit(
@@ -238,8 +235,10 @@ export class JavaExtractor implements LanguageExtractor {
         const startLine = n.startPosition.row;
         const endLine = n.endPosition.row;
         const lineCount = endLine - startLine;
-        const meetsMinBlock = !config.minBlockLines || lineCount >= config.minBlockLines;
-        if (lineCount >= indexConfig.blockMinLines && meetsMinBlock) {
+        if (this.shouldSkip(IndexUnitType.BLOCK, parentFunction.name, lineCount, config)) {
+          return;
+        }
+        if (lineCount >= indexConfig.blockMinLines) {
           const id = this.buildId(IndexUnitType.BLOCK, parentFunction.name, startLine, endLine);
           const blockUnit: IndexUnit = {
             id,
