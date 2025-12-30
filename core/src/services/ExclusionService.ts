@@ -40,7 +40,6 @@ export class ExclusionService {
 
   async cleanExclusions(): Promise<{ removed: number; kept: number }> {
     const config = await this.loadConfig();
-    await this.deps.ensureDb();
     const units = await this.deps.db.getAllUnits();
 
     const actualPairsByType = {

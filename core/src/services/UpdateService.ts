@@ -12,8 +12,7 @@ export class UpdateService {
   ) {}
 
   async updateIndex(): Promise<void> {
-    const extractor = await this.deps.getExtractor();
-    await this.deps.ensureDb();
+    const extractor = this.deps.extractor;
 
     try {
       await performIncrementalUpdate(this.deps.repoPath, extractor, this.deps.db);

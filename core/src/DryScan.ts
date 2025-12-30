@@ -20,7 +20,7 @@ export type InitOptions = InitServiceOptions;
 
 export class DryScan {
   repoPath: string;
-  private extractor?: IndexUnitExtractor;
+  private readonly extractor: IndexUnitExtractor;
   private db: DryScanDatabase;
   private readonly services: {
     initializer: RepositoryInitializer;
@@ -36,14 +36,13 @@ export class DryScan {
     db?: DryScanDatabase
   ) {
     this.repoPath = repoPath;
-    this.extractor = extractor;
+    this.extractor = extractor ?? new IndexUnitExtractor(repoPath, defaultExtractors(repoPath));
     this.db = db ?? new DryScanDatabase();
 
     this.serviceDeps = {
       repoPath: this.repoPath,
       db: this.db,
-      getExtractor: () => this.ensureExtractor(),
-      ensureDb: () => this.ensureDatabase(),
+      extractor: this.extractor,
     };
 
     const exclusion = new ExclusionService(this.serviceDeps);
@@ -63,6 +62,7 @@ export class DryScan {
    */
   async init(options?: InitOptions): Promise<void> {
     log("Initializing DryScan repository at", this.repoPath);
+    await this.ensureDatabase();
     if (await this.isInitialized()) {
       log("Repository already initialized.");
       return;
@@ -73,20 +73,21 @@ export class DryScan {
 
   /**
    * Updates the index by detecting changed, new, and deleted files.
-   * Only reprocesses functions in changed files for efficiency.
+   * Only reprocesses units in changed files for efficiency.
    * Delegates to DryScanUpdater module for implementation.
    * 
    * Update process:
    * 1. List all current source files in repository
    * 2. For each file, check if it's new, changed, or unchanged (via mtime + checksum)
-   * 3. Remove old functions from changed/deleted files
-   * 4. Extract and save functions from new/changed files
-   * 5. Recompute internal dependencies for affected functions
-   * 6. Recompute embeddings for affected functions
+   * 3. Remove old units from changed/deleted files
+   * 4. Extract and save units from new/changed files
+   * 5. Recompute internal dependencies for affected units
+   * 6. Recompute embeddings for affected units
    * 7. Update file tracking metadata
    */
   async updateIndex(): Promise<void> {
     log("Updating DryScan index at", this.repoPath);
+    await this.ensureDatabase();
     await this.services.updater.updateIndex();
     log("Index update complete.");
   }
@@ -102,7 +103,6 @@ export class DryScan {
   async findDuplicates(): Promise<DuplicateAnalysisResult> {
     const config = await this.loadConfig();
     log("Finding duplicates using configured threshold", config.threshold);
-    await this.ensureExtractor();
     await this.ensureDatabase();
 
     log("Step 1: Updating index to ensure latest code is analyzed...");
@@ -121,16 +121,6 @@ export class DryScan {
     return this.services.exclusion.cleanExclusions();
   }
 
-  private async ensureExtractor(): Promise<IndexUnitExtractor> {
-    if (!this.extractor) {
-      log("Creating index unit extractor with current config");
-      this.extractor = new IndexUnitExtractor(this.repoPath, defaultExtractors(this.repoPath));
-      return this.extractor;
-    }
-    log("Reusing existing extractor");
-    return this.extractor;
-  }
-
   private async ensureDatabase(): Promise<void> {
     if (this.db.isInitialized()) return;
     const dbPath = upath.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
@@ -143,18 +133,10 @@ export class DryScan {
   }
 
   private async isInitialized(): Promise<boolean> {
-    const indexPath = upath.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
-    try {
-      const stat = await fs.stat(indexPath);
-      log("Index file found at", indexPath);
-      return stat.isFile();
-    } catch (err: any) {
-      if (err.code === "ENOENT") {
-        log("Index file not found at", indexPath);
-        return false;
-      }
-      log("Error checking initialization:", err);
-      throw err;
-    }
+    if (!this.db.isInitialized()) return false;
+    const unitCount = await this.db.countUnits();
+    const initialized = unitCount > 0;
+    log("Initialization check: %d indexed units", unitCount);
+    return initialized;
   }
 }

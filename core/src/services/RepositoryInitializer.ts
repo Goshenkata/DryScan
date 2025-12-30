@@ -21,8 +21,7 @@ export class RepositoryInitializer {
   ) {}
 
   async init(options?: InitOptions): Promise<void> {
-    const extractor = await this.deps.getExtractor();
-    await this.ensureDatabase();
+    const extractor = this.deps.extractor;
 
     log("Phase 1: Extracting index units...");
     await this.initUnits(extractor);
@@ -33,10 +32,6 @@ export class RepositoryInitializer {
     log("Phase 4: Tracking files...");
     await this.trackFiles(extractor);
     await this.exclusionService.cleanupExcludedFiles();
-  }
-
-  private async ensureDatabase(): Promise<void> {
-    await this.deps.ensureDb();
   }
 
   private async initUnits(extractor: IndexUnitExtractor): Promise<void> {
