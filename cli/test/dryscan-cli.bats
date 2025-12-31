@@ -315,3 +315,32 @@ PY
   )
   [ "${remaining_pairs}" -eq 0 ]
 }
+
+@test "gitignore rules are respected on init and update" {
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  initial_files=$(sqlite_query "SELECT COUNT(*) FROM files;")
+  [ "${initial_files}" -gt 0 ]
+
+  cat > .gitignore <<'EOF'
+src/main/java/com/example/demo/service/**
+EOF
+
+  mkdir -p src/main/java/com/example/demo/model
+  cat > src/main/java/com/example/demo/model/.gitignore <<'EOF'
+User.java
+EOF
+
+  run_dryscan update "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  service_files=$(sqlite_query "SELECT COUNT(*) FROM files WHERE filePath LIKE '%/service/%';")
+  [ "${service_files}" -eq 0 ]
+
+  user_model=$(sqlite_query "SELECT COUNT(*) FROM files WHERE filePath LIKE '%/model/User.java';")
+  [ "${user_model}" -eq 0 ]
+
+  remaining=$(sqlite_query "SELECT COUNT(*) FROM files;")
+  [ "${remaining}" -lt "${initial_files}" ]
+}

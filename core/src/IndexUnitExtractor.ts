@@ -1,15 +1,17 @@
 import path from "path";
+import type { Stats } from "fs";
 import fs from "fs/promises";
 import upath from "upath";
 import crypto from "node:crypto";
 import debug from "debug";
+import { glob } from "glob-gitignore";
 import { IndexUnit, IndexUnitType } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
 import { JavaExtractor } from "./extractors/java";
-import { minimatch } from "minimatch";
 import { FILE_CHECKSUM_ALGO } from "./const";
 import { configStore } from "./config/configStore";
 import { DryConfig } from "./types";
+import { Gitignore } from "./Gitignore";
 
 const log = debug("DryScan:Extractor");
 
@@ -29,6 +31,7 @@ export function defaultExtractors(repoPath: string): LanguageExtractor[] {
 export class IndexUnitExtractor {
   private readonly root: string;
   readonly extractors: LanguageExtractor[];
+  private readonly gitignore: Gitignore;
 
   constructor(
     rootPath: string,
@@ -36,6 +39,7 @@ export class IndexUnitExtractor {
   ) {
     this.root = rootPath;
     this.extractors = extractors ?? defaultExtractors(rootPath);
+    this.gitignore = new Gitignore(this.root);
     log("Initialized extractor for %s", this.root);
   }
 
@@ -43,17 +47,16 @@ export class IndexUnitExtractor {
    * Lists all supported source files from a path. Honors exclusion globs from config.
    */
   async listSourceFiles(dirPath: string): Promise<string[]> {
-    const fullPath = path.isAbsolute(dirPath)
-      ? dirPath
-      : path.join(this.root, dirPath);
-
-    log("Listing source files under %s", fullPath);
-
+    const target = await this.resolveTarget(dirPath);
     const config = await this.loadConfig();
-    const files: string[] = [];
+    const ignoreMatcher = await this.gitignore.buildMatcher(config);
 
-    await this.walkSourceFiles(fullPath, config, files);
-    return files;
+    if (target.stat.isFile()) {
+      return this.filterSingleFile(target.baseRel, ignoreMatcher);
+    }
+
+    const matches = await this.globSourceFiles(target.baseRel);
+    return this.filterSupportedFiles(matches, ignoreMatcher);
   }
 
   /**
@@ -203,23 +206,12 @@ export class IndexUnitExtractor {
    */
   private async scanDirectory(dir: string): Promise<IndexUnit[]> {
     const out: IndexUnit[] = [];
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const child = path.join(dir, entry.name);
-      const relChild = this.relPath(child);
-      if (await this.shouldExclude(relChild)) {
-        log("Skipping excluded path %s", relChild);
-        continue;
-      }
-      if (entry.isDirectory()) {
-        const nested = await this.scanDirectory(child);
-        out.push(...nested);
-        continue;
-      }
-      if (entry.isFile()) {
-        const extracted = await this.tryScanSupportedFile(child);
-        out.push(...extracted);
-      }
+    const relDir = this.relPath(dir);
+    const files = await this.listSourceFiles(relDir);
+    for (const relFile of files) {
+      const absFile = path.join(this.root, relFile);
+      const extracted = await this.tryScanSupportedFile(absFile);
+      out.push(...extracted);
     }
     return out;
   }
@@ -263,7 +255,7 @@ export class IndexUnitExtractor {
    * This keeps paths stable across platforms and consistent in the index/DB.
    */
   private relPath(absPath: string): string {
-    return upath.normalizeTrim(upath.relative(this.root, absPath));
+    return this.normalizeRelPath(upath.relative(this.root, absPath));
   }
 
   /**
@@ -271,44 +263,52 @@ export class IndexUnitExtractor {
    */
   private async shouldExclude(relPath: string): Promise<boolean> {
     const config = await this.loadConfig();
-    const patterns = config?.excludedPaths || [];
-    if (patterns.length === 0) return false;
-    return patterns.some((pattern) => minimatch(relPath, pattern, { dot: true }));
+    const ignoreMatcher = await this.gitignore.buildMatcher(config);
+    return ignoreMatcher.ignores(this.normalizeRelPath(relPath));
   }
 
   private async loadConfig(): Promise<DryConfig> {
     return await configStore.get(this.root);
   }
 
-  private isExcluded(rel: string, config: DryConfig): boolean {
-    if (!rel) return false; // do not exclude the repo root itself
-    const patterns = config.excludedPaths || [];
-    return patterns.some((pattern) => minimatch(rel, pattern, { dot: true }));
+  /**
+   * Normalizes repo-relative paths and strips leading "./" to keep matcher inputs consistent.
+   */
+  private normalizeRelPath(relPath: string): string {
+    const normalized = upath.normalizeTrim(relPath);
+    return normalized.startsWith("./") ? normalized.slice(2) : normalized;
   }
 
-  private async walkSourceFiles(currentPath: string, config: DryConfig, files: string[]): Promise<void> {
-    const stat = await fs.stat(currentPath).catch(() => null);
+  private async resolveTarget(dirPath: string): Promise<{ fullPath: string; baseRel: string; stat: Stats; }> {
+    const fullPath = path.isAbsolute(dirPath) ? dirPath : path.join(this.root, dirPath);
+    const stat = await fs.stat(fullPath).catch(() => null);
     if (!stat) {
-      throw new Error(`Path not found: ${currentPath}`);
+      throw new Error(`Path not found: ${fullPath}`);
     }
+    const baseRel = this.relPath(fullPath);
+    log("Listing source files under %s", fullPath);
+    return { fullPath, baseRel, stat };
+  }
 
-    const rel = this.relPath(currentPath);
-    if (this.isExcluded(rel, config)) {
-      log("Skipping excluded path %s", rel);
-      return;
-    }
+  private async filterSingleFile(baseRel: string, ignoreMatcher: Ignore): Promise<string[]> {
+    const relFile = this.normalizeRelPath(baseRel);
+    if (ignoreMatcher.ignores(relFile)) return [];
+    return this.extractors.some((ex) => ex.supports(relFile)) ? [relFile] : [];
+  }
 
-    if (stat.isFile()) {
-      if (this.extractors.some((ex) => ex.supports(currentPath))) {
-        files.push(rel);
-      }
-      return;
-    }
+  private async globSourceFiles(baseRel: string): Promise<string[]> {
+    const pattern = baseRel ? `${baseRel.replace(/\\/g, "/")}/**/*` : "**/*";
+    const matches = await glob(pattern, {
+      cwd: this.root,
+      dot: false,
+      nodir: true,
+    });
+    return matches.map((p: string) => this.normalizeRelPath(p));
+  }
 
-    const entries = await fs.readdir(currentPath, { withFileTypes: true });
-    for (const entry of entries) {
-      const child = path.join(currentPath, entry.name);
-      await this.walkSourceFiles(child, config, files);
-    }
+  private filterSupportedFiles(relPaths: string[], ignoreMatcher: Ignore): string[] {
+    return relPaths
+      .filter((relPath: string) => !ignoreMatcher.ignores(relPath))
+      .filter((relPath: string) => this.extractors.some((ex) => ex.supports(relPath)));
   }
 }
