@@ -49,51 +49,10 @@ export class IndexUnitExtractor {
 
     log("Listing source files under %s", fullPath);
 
-    const stat = await fs.stat(fullPath).catch(() => null);
-    if (!stat) {
-      throw new Error(`Path not found: ${fullPath}`);
-    }
-
-    if (stat.isFile()) {
-      const supported = this.extractors.some(ex => ex.supports(fullPath));
-      const rel = this.relPath(fullPath);
-      if (await this.shouldExclude(rel)) {
-        log("Skipping excluded file %s", rel);
-        return [];
-      }
-      return supported ? [rel] : [];
-    }
-
-    return this.listSourceFilesInDirectory(fullPath);
-  }
-
-  /**
-   * Recursively walks a directory and collects supported files.
-   */
-  private async listSourceFilesInDirectory(dir: string): Promise<string[]> {
+    const config = await this.loadConfig();
     const files: string[] = [];
-    const entries = await fs.readdir(dir, { withFileTypes: true });
 
-    for (const entry of entries) {
-      const child = path.join(dir, entry.name);
-      const relChild = this.relPath(child);
-
-      if (await this.shouldExclude(relChild)) {
-        log("Skipping excluded path %s", relChild);
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        const nested = await this.listSourceFilesInDirectory(child);
-        files.push(...nested);
-      } else if (entry.isFile()) {
-        const supported = this.extractors.some(ex => ex.supports(child));
-        if (supported) {
-          files.push(relChild);
-        }
-      }
-    }
-
+    await this.walkSourceFiles(fullPath, config, files);
     return files;
   }
 
@@ -319,5 +278,37 @@ export class IndexUnitExtractor {
 
   private async loadConfig(): Promise<DryConfig> {
     return await configStore.get(this.root);
+  }
+
+  private isExcluded(rel: string, config: DryConfig): boolean {
+    if (!rel) return false; // do not exclude the repo root itself
+    const patterns = config.excludedPaths || [];
+    return patterns.some((pattern) => minimatch(rel, pattern, { dot: true }));
+  }
+
+  private async walkSourceFiles(currentPath: string, config: DryConfig, files: string[]): Promise<void> {
+    const stat = await fs.stat(currentPath).catch(() => null);
+    if (!stat) {
+      throw new Error(`Path not found: ${currentPath}`);
+    }
+
+    const rel = this.relPath(currentPath);
+    if (this.isExcluded(rel, config)) {
+      log("Skipping excluded path %s", rel);
+      return;
+    }
+
+    if (stat.isFile()) {
+      if (this.extractors.some((ex) => ex.supports(currentPath))) {
+        files.push(rel);
+      }
+      return;
+    }
+
+    const entries = await fs.readdir(currentPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const child = path.join(currentPath, entry.name);
+      await this.walkSourceFiles(child, config, files);
+    }
   }
 }
