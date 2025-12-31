@@ -74,7 +74,7 @@ export function pairKeyMatches(actual: ParsedPairKey, pattern: ParsedPairKey): b
   );
 }
 
-export function canonicalFunctionSignature(unit: UnitLike): string {
+function canonicalFunctionSignature(unit: UnitLike): string {
   const arity = extractArity(unit.code);
   return `${unit.name}(arity:${arity})`;
 }
@@ -82,7 +82,7 @@ export function canonicalFunctionSignature(unit: UnitLike): string {
 /**
  * Normalizes block code (strips comments/whitespace) and hashes it for pair matching.
  */
-export function normalizedBlockHash(unit: UnitLike): string {
+function normalizedBlockHash(unit: UnitLike): string {
   const normalized = normalizeCode(unit.code);
   return crypto.createHash(BLOCK_HASH_ALGO).update(normalized).digest("hex");
 }

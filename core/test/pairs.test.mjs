@@ -3,8 +3,6 @@ import {
   pairKeyForUnits,
   parsePairKey,
   pairKeyMatches,
-  canonicalFunctionSignature,
-  normalizedBlockHash,
 } from "../src/pairs.ts";
 import { IndexUnitType } from "../src/types.ts";
 
@@ -33,7 +31,7 @@ describe("pair key utilities", () => {
     expect(pairKeyMatches(actual, pattern)).to.equal(true);
   });
 
-  it("uses canonical function signatures with arity", () => {
+  it("uses canonical function signatures with arity via pair keys", () => {
     const fn1 = {
       unitType: IndexUnitType.FUNCTION,
       filePath: "src/Foo.ts",
@@ -46,17 +44,15 @@ describe("pair key utilities", () => {
       name: "Foo.bar",
       code: "function bar(a,b){return a+b;}",
     };
-
-    const signature = canonicalFunctionSignature(fn1);
-    expect(signature).to.equal("Foo.bar(arity:2)");
-
     const key = pairKeyForUnits(fn1, fn2);
+    expect(key).to.equal("function|Foo.bar(arity:2)|Foo.bar(arity:2)");
+
     const parsed = key ? parsePairKey(key) : null;
     expect(parsed?.left).to.equal("Foo.bar(arity:2)");
     expect(parsed?.right).to.equal("Foo.bar(arity:2)");
   });
 
-  it("hashes blocks ignoring whitespace and comments", () => {
+  it("hashes blocks ignoring whitespace and comments via pair keys", () => {
     const blockA = {
       unitType: IndexUnitType.BLOCK,
       filePath: "src/file.ts",
@@ -69,15 +65,23 @@ describe("pair key utilities", () => {
       name: "fn",
       code: "{/* comment */ return   a + b; }",
     };
+    const blockC = {
+      unitType: IndexUnitType.BLOCK,
+      filePath: "src/file.ts",
+      name: "fn",
+      code: "{ return a - b; }",
+    };
 
-    const hashA = normalizedBlockHash(blockA);
-    const hashB = normalizedBlockHash(blockB);
-    expect(hashA).to.equal(hashB);
+    const keyAB = pairKeyForUnits(blockA, blockB);
+    expect(keyAB?.startsWith("block|")).to.equal(true);
 
-    const key = pairKeyForUnits(blockA, blockB);
-    const parsed = key ? parsePairKey(key) : null;
-    expect(parsed?.type).to.equal(IndexUnitType.BLOCK);
-    expect(parsed?.left).to.equal(hashA);
-    expect(parsed?.right).to.equal(hashB);
+    const parsedAB = keyAB ? parsePairKey(keyAB) : null;
+    expect(parsedAB?.type).to.equal(IndexUnitType.BLOCK);
+    expect(parsedAB?.left).to.equal(parsedAB?.right);
+    expect(parsedAB?.left?.length).to.equal(40); // sha1 hex length
+
+    const keyAC = pairKeyForUnits(blockA, blockC);
+    const parsedAC = keyAC ? parsePairKey(keyAC) : null;
+    expect(parsedAC?.left).to.not.equal(parsedAB?.left);
   });
 });
