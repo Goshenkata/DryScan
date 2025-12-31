@@ -29,7 +29,6 @@ export function defaultExtractors(repoPath: string): LanguageExtractor[] {
 export class IndexUnitExtractor {
   private readonly root: string;
   readonly extractors: LanguageExtractor[];
-  private config?: DryConfig;
 
   constructor(
     rootPath: string,
@@ -44,7 +43,6 @@ export class IndexUnitExtractor {
    * Lists all supported source files from a path. Honors exclusion globs from config.
    */
   async listSourceFiles(dirPath: string): Promise<string[]> {
-    await this.loadConfig();
     const fullPath = path.isAbsolute(dirPath)
       ? dirPath
       : path.join(this.root, dirPath);
@@ -59,7 +57,7 @@ export class IndexUnitExtractor {
     if (stat.isFile()) {
       const supported = this.extractors.some(ex => ex.supports(fullPath));
       const rel = this.relPath(fullPath);
-      if (this.shouldExclude(rel)) {
+      if (await this.shouldExclude(rel)) {
         log("Skipping excluded file %s", rel);
         return [];
       }
@@ -73,7 +71,6 @@ export class IndexUnitExtractor {
    * Recursively walks a directory and collects supported files.
    */
   private async listSourceFilesInDirectory(dir: string): Promise<string[]> {
-    await this.loadConfig();
     const files: string[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
 
@@ -81,7 +78,7 @@ export class IndexUnitExtractor {
       const child = path.join(dir, entry.name);
       const relChild = this.relPath(child);
 
-      if (this.shouldExclude(relChild)) {
+      if (await this.shouldExclude(relChild)) {
         log("Skipping excluded path %s", relChild);
         continue;
       }
@@ -117,7 +114,6 @@ export class IndexUnitExtractor {
    * The returned units have repo-relative file paths and no embedding attached.
    */
   async scan(targetPath: string): Promise<IndexUnit[]> {
-    await this.loadConfig();
     const fullPath = path.isAbsolute(targetPath)
       ? targetPath
       : path.join(this.root, targetPath);
@@ -247,13 +243,12 @@ export class IndexUnitExtractor {
    * Scans a directory recursively, extracting units from supported files while honoring exclusions.
    */
   private async scanDirectory(dir: string): Promise<IndexUnit[]> {
-    await this.loadConfig();
     const out: IndexUnit[] = [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const child = path.join(dir, entry.name);
       const relChild = this.relPath(child);
-      if (this.shouldExclude(relChild)) {
+      if (await this.shouldExclude(relChild)) {
         log("Skipping excluded path %s", relChild);
         continue;
       }
@@ -282,7 +277,6 @@ export class IndexUnitExtractor {
    * Optionally throws when the file type is unsupported (used when scanning an explicit file).
    */
   private async tryScanSupportedFile(filePath: string, throwOnUnsupported = false): Promise<IndexUnit[]> {
-    await this.loadConfig();
     const extractor = this.extractors.find(ex => ex.supports(filePath));
     if (!extractor) {
       if (throwOnUnsupported) {
@@ -291,7 +285,7 @@ export class IndexUnitExtractor {
       return [];
     }
     const rel = this.relPath(filePath);
-    if (this.shouldExclude(rel)) {
+    if (await this.shouldExclude(rel)) {
       log("Skipping excluded file %s", rel);
       return [];
     }
@@ -316,14 +310,14 @@ export class IndexUnitExtractor {
   /**
    * Returns true if a repo-relative path matches any configured exclusion glob.
    */
-  private shouldExclude(relPath: string): boolean {
-    const config = this.config;
+  private async shouldExclude(relPath: string): Promise<boolean> {
+    const config = await this.loadConfig();
     const patterns = config?.excludedPaths || [];
     if (patterns.length === 0) return false;
     return patterns.some((pattern) => minimatch(relPath, pattern, { dot: true }));
   }
 
-  private async loadConfig(): Promise<void> {
-    this.config = await configStore.get(this.root);
+  private async loadConfig(): Promise<DryConfig> {
+    return await configStore.get(this.root);
   }
 }

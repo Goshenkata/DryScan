@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import { join } from "path";
-import { DryConfig, DuplicateReport, configStore } from "@dryscan/core";
+import type { DryConfig, DuplicateReport } from "@dryscan/core";
+import { configStore } from "@dryscan/core";
 
 const REPORT_FILE_PREFIX = "dupes-";
 const DRYSCAN_DIR = ".dry";

@@ -2,7 +2,7 @@ import { expect } from "chai";
 import fs from "fs/promises";
 import os from "os";
 import { join } from "path";
-import { loadDryConfig, IndexUnitType } from "@dryscan/core";
+import { configStore } from "@dryscan/core";
 import {
   writeDuplicateReport,
   loadLatestReport,
@@ -16,7 +16,7 @@ function makeSide(name, filePath) {
     startLine: 1,
     endLine: 3,
     code: `function ${name}(arg) { return arg; }`,
-    unitType: IndexUnitType.FUNCTION,
+    unitType: "function",
   };
 }
 
@@ -87,7 +87,7 @@ describe("CLI duplicate reports", function () {
     expect(result.exclusion).to.equal(target.exclusionString);
     expect(result.added).to.be.true;
 
-    const config = await loadDryConfig(repoPath);
+    const config = await configStore.get(repoPath);
     expect(config.excludedPairs).to.include(target.exclusionString);
 
     const second = await applyExclusionFromLatestReport(repoPath, target.shortId);
