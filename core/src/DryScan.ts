@@ -12,6 +12,8 @@ import { ExclusionService } from "./services/ExclusionService";
 import { DryScanServiceDeps } from "./services/types";
 import { configStore } from "./config/configStore";
 import { DryConfig } from "./types";
+import { PairingService } from "./services/PairingService";
+import { ReportsService } from "./services/ReportsService";
 
 const log = debug("DryScan");
 
@@ -27,6 +29,7 @@ export class DryScan {
     updater: UpdateService;
     duplicate: DuplicateService;
     exclusion: ExclusionService;
+    reports: ReportsService;
   };
   private readonly serviceDeps: DryScanServiceDeps;
 
@@ -43,6 +46,7 @@ export class DryScan {
       repoPath: this.repoPath,
       db: this.db,
       extractor: this.extractor,
+      pairing: new PairingService(this.extractor),
     };
 
     const exclusion = new ExclusionService(this.serviceDeps);
@@ -51,6 +55,7 @@ export class DryScan {
       updater: new UpdateService(this.serviceDeps, exclusion),
       duplicate: new DuplicateService(this.serviceDeps),
       exclusion,
+      reports: new ReportsService(this.serviceDeps),
     };
   }
 
@@ -99,13 +104,7 @@ export class DryScan {
   async buildDuplicateReport(): Promise<DuplicateReport> {
     const config = await this.loadConfig();
     const analysis = await this.findDuplicates(config);
-    return {
-      version: 1,
-      generatedAt: new Date().toISOString(),
-      threshold: config.threshold,
-      score: analysis.score,
-      duplicates: analysis.duplicates,
-    };
+    return this.services.reports.buildDuplicateReport(analysis.duplicates, config.threshold, analysis.score);
   }
 
   /**

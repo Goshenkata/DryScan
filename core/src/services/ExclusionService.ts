@@ -2,8 +2,8 @@ import { DryConfig } from "../types";
 import { configStore } from "../config/configStore";
 import { DryScanServiceDeps } from "./types";
 import { IndexUnitType } from "../types";
-import { pairKeyForUnits, parsePairKey, pairKeyMatches, ParsedPairKey } from "../pairs";
 import { minimatch } from "minimatch";
+import { ParsedPairKey } from "./PairingService";
 
 export class ExclusionService {
   private config?: DryConfig;
@@ -52,14 +52,14 @@ export class ExclusionService {
     const removed: string[] = [];
 
     for (const entry of config.excludedPairs || []) {
-      const parsed = parsePairKey(entry);
+      const parsed = this.deps.pairing.parsePairKey(entry);
       if (!parsed) {
         removed.push(entry);
         continue;
       }
 
       const candidates = actualPairsByType[parsed.type];
-      const matched = candidates.some((actual) => pairKeyMatches(actual, parsed));
+      const matched = candidates.some((actual) => this.deps.pairing.pairKeyMatches(actual, parsed));
       if (matched) {
         kept.push(entry);
       } else {
@@ -85,8 +85,8 @@ export class ExclusionService {
     const pairs: ParsedPairKey[] = [];
     for (let i = 0; i < typed.length; i++) {
       for (let j = i + 1; j < typed.length; j++) {
-        const key = pairKeyForUnits(typed[i], typed[j]);
-        const parsed = key ? parsePairKey(key) : null;
+        const key = this.deps.pairing.pairKeyForUnits(typed[i], typed[j]);
+        const parsed = key ? this.deps.pairing.parsePairKey(key) : null;
         if (parsed) {
           pairs.push(parsed);
         }

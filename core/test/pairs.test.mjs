@@ -1,10 +1,10 @@
 import { expect } from "chai";
-import {
-  pairKeyForUnits,
-  parsePairKey,
-  pairKeyMatches,
-} from "../src/pairs.ts";
+import { PairingService } from "../src/services/PairingService.ts";
+import { IndexUnitExtractor, defaultExtractors } from "../src/IndexUnitExtractor.ts";
 import { IndexUnitType } from "../src/types.ts";
+
+const extractor = new IndexUnitExtractor(process.cwd(), defaultExtractors(process.cwd()));
+const pairing = new PairingService(extractor);
 
 describe("pair key utilities", () => {
   it("builds order-insensitive class pair keys and matches globs", () => {
@@ -21,14 +21,14 @@ describe("pair key utilities", () => {
       code: "class B {}",
     };
 
-    const key = pairKeyForUnits(left, right);
+    const key = pairing.pairKeyForUnits(left, right);
     expect(key).to.equal("class|src/a/A.java|src/b/B.java");
 
-    const pattern = parsePairKey("class|src/**/B.java|src/**/A.java");
-    const actual = key ? parsePairKey(key) : null;
+    const pattern = pairing.parsePairKey("class|src/**/B.java|src/**/A.java");
+    const actual = key ? pairing.parsePairKey(key) : null;
     expect(actual).to.not.be.null;
     expect(pattern).to.not.be.null;
-    expect(pairKeyMatches(actual, pattern)).to.equal(true);
+    expect(pairing.pairKeyMatches(actual, pattern)).to.equal(true);
   });
 
   it("uses canonical function signatures with arity via pair keys", () => {
@@ -44,10 +44,10 @@ describe("pair key utilities", () => {
       name: "Foo.bar",
       code: "function bar(a,b){return a+b;}",
     };
-    const key = pairKeyForUnits(fn1, fn2);
+    const key = pairing.pairKeyForUnits(fn1, fn2);
     expect(key).to.equal("function|Foo.bar(arity:2)|Foo.bar(arity:2)");
 
-    const parsed = key ? parsePairKey(key) : null;
+    const parsed = key ? pairing.parsePairKey(key) : null;
     expect(parsed?.left).to.equal("Foo.bar(arity:2)");
     expect(parsed?.right).to.equal("Foo.bar(arity:2)");
   });
@@ -72,16 +72,16 @@ describe("pair key utilities", () => {
       code: "{ return a - b; }",
     };
 
-    const keyAB = pairKeyForUnits(blockA, blockB);
+    const keyAB = pairing.pairKeyForUnits(blockA, blockB);
     expect(keyAB?.startsWith("block|")).to.equal(true);
 
-    const parsedAB = keyAB ? parsePairKey(keyAB) : null;
+    const parsedAB = keyAB ? pairing.parsePairKey(keyAB) : null;
     expect(parsedAB?.type).to.equal(IndexUnitType.BLOCK);
     expect(parsedAB?.left).to.equal(parsedAB?.right);
     expect(parsedAB?.left?.length).to.equal(40); // sha1 hex length
 
-    const keyAC = pairKeyForUnits(blockA, blockC);
-    const parsedAC = keyAC ? parsePairKey(keyAC) : null;
+    const keyAC = pairing.pairKeyForUnits(blockA, blockC);
+    const parsedAC = keyAC ? pairing.parsePairKey(keyAC) : null;
     expect(parsedAC?.left).to.not.equal(parsedAB?.left);
   });
 });

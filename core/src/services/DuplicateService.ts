@@ -4,7 +4,6 @@ import { cosineSimilarity } from "@langchain/core/utils/math";
 import { DryScanServiceDeps } from "./types";
 import { DuplicateAnalysisResult, DuplicateGroup, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
-import { pairKeyForUnits, parsePairKey, pairKeyMatches } from "../pairs";
 import { DryConfig } from "../types";
 
 const log = debug("DryScan:DuplicateService");
@@ -74,7 +73,7 @@ export class DuplicateService {
 
           const similarity = this.computeWeightedSimilarity(left, right);
           if (similarity >= threshold) {
-            const exclusionString = pairKeyForUnits(left, right);
+            const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
             if (!exclusionString) continue;
 
             duplicates.push({
@@ -110,13 +109,13 @@ export class DuplicateService {
   private isGroupExcluded(group: DuplicateGroup): boolean {
     const config = this.config;
     if (!config || !config.excludedPairs || config.excludedPairs.length === 0) return false;
-    const key = pairKeyForUnits(group.left, group.right);
+    const key = this.deps.pairing.pairKeyForUnits(group.left, group.right);
     if (!key) return false;
-    const actual = parsePairKey(key);
+    const actual = this.deps.pairing.parsePairKey(key);
     if (!actual) return false;
     return config.excludedPairs.some((entry) => {
-      const parsed = parsePairKey(entry);
-      return parsed ? pairKeyMatches(actual, parsed) : false;
+      const parsed = this.deps.pairing.parsePairKey(entry);
+      return parsed ? this.deps.pairing.pairKeyMatches(actual, parsed) : false;
     });
   }
 

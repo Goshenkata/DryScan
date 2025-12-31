@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import Parser from "tree-sitter";
 import Java from "tree-sitter-java";
 import { LanguageExtractor } from "./LanguageExtractor";
@@ -5,6 +6,7 @@ import { IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { DryConfig } from "../types";
 import { configStore } from "../config/configStore";
+import { BLOCK_HASH_ALGO } from "../const";
 
 interface ParsedFile {
   tree: Parser.Tree;
@@ -113,6 +115,13 @@ export class JavaExtractor implements LanguageExtractor {
     return this.extractCallsFromNode(functionNode, parsed.source);
   }
 
+  unitLabel(unit: IndexUnit): string | null {
+    if (unit.unitType === IndexUnitType.CLASS) return unit.filePath;
+    if (unit.unitType === IndexUnitType.FUNCTION) return this.canonicalFunctionSignature(unit);
+    if (unit.unitType === IndexUnitType.BLOCK) return this.normalizedBlockHash(unit);
+    return unit.name;
+  }
+
   private extractCallsFromNode(node: Parser.SyntaxNode, source: string): string[] {
     const calls: string[] = [];
 
@@ -181,6 +190,16 @@ export class JavaExtractor implements LanguageExtractor {
       }
     }
     return bodies;
+  }
+
+  private canonicalFunctionSignature(unit: IndexUnit): string {
+    const arity = this.extractArity(unit.code);
+    return `${unit.name}(arity:${arity})`;
+  }
+
+  private normalizedBlockHash(unit: IndexUnit): string {
+    const normalized = this.normalizeCode(unit.code);
+    return crypto.createHash(BLOCK_HASH_ALGO).update(normalized).digest("hex");
   }
 
   private shouldSkip(unitType: IndexUnitType, name: string, lineCount: number): boolean {
@@ -297,5 +316,21 @@ export class JavaExtractor implements LanguageExtractor {
 
   private buildId(type: IndexUnitType, name: string, startLine: number, endLine: number): string {
     return `${type}:${name}:${startLine}-${endLine}`;
+  }
+
+  private extractArity(code: string): number {
+    const match = code.match(/^[^{]*?\(([^)]*)\)/s);
+    if (!match) return 0;
+    const params = match[1]
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return params.length;
+  }
+
+  private normalizeCode(code: string): string {
+    const withoutBlockComments = code.replace(/\/\*[\s\S]*?\*\//g, "");
+    const withoutLineComments = withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
+    return withoutLineComments.replace(/\s+/g, "");
   }
 }
