@@ -3,7 +3,7 @@ import Java from "tree-sitter-java";
 import { LanguageExtractor } from "./LanguageExtractor";
 import { IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
-import { DryConfig } from "../config/dryconfig";
+import { DryConfig } from "../types";
 import { configStore } from "../config/configStore";
 
 interface ParsedFile {

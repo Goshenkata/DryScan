@@ -1,21 +1,63 @@
-import { promises as fs } from "fs";
-import { join } from "path";
-import { DryConfig, DuplicateReport, configStore } from "@dryscan/core";
+import fs from "fs/promises";
+import upath from "upath";
+import shortUuid from "short-uuid";
+import { DuplicateGroup, DuplicationScore } from "./types";
+import { pairKeyForUnits } from "./pairs";
+import { DRYSCAN_DIR, REPORTS_DIR } from "./const";
+import { DryConfig } from "./types";
+import { configStore } from "./config/configStore";
+
+export interface DuplicateReport {
+  version: number;
+  generatedAt: string;
+  threshold: number;
+  score: DuplicationScore;
+  duplicates: DuplicateGroup[];
+}
 
 const REPORT_FILE_PREFIX = "dupes-";
-const DRYSCAN_DIR = ".dry";
-const REPORTS_DIR = "reports";
+
+/**
+ * Creates a report payload with short ids and exclusion strings attached to each group.
+ */
+export function buildDuplicateReport(
+  duplicates: DuplicateGroup[],
+  threshold: number,
+  score: DuplicationScore
+): DuplicateReport {
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    threshold,
+    score,
+    duplicates: enrichDuplicates(duplicates),
+  };
+}
+
+/**
+ * Adds short ids and exclusion strings to duplicate groups for reporting and exclusion commands.
+ */
+function enrichDuplicates(duplicates: DuplicateGroup[]): DuplicateGroup[] {
+  return duplicates.map((group) => {
+    const exclusionString = group.exclusionString ?? pairKeyForUnits(group.left, group.right);
+    return {
+      ...group,
+      shortId: group.shortId ?? shortUuid.generate(),
+      exclusionString,
+    };
+  });
+}
 
 /**
  * Writes a timestamped report file under .dry/reports and returns its path.
  */
 export async function writeDuplicateReport(repoPath: string, report: DuplicateReport): Promise<string> {
-  const reportDir = join(repoPath, DRYSCAN_DIR, REPORTS_DIR);
+  const reportDir = upath.join(repoPath, DRYSCAN_DIR, REPORTS_DIR);
   await fs.mkdir(reportDir, { recursive: true });
 
   const safeTimestamp = report.generatedAt.replace(/[:.]/g, "-");
   const fileName = `${REPORT_FILE_PREFIX}${safeTimestamp}.json`;
-  const filePath = join(reportDir, fileName);
+  const filePath = upath.join(reportDir, fileName);
   await fs.writeFile(filePath, JSON.stringify(report, null, 2), "utf8");
   return filePath;
 }
@@ -24,7 +66,7 @@ export async function writeDuplicateReport(repoPath: string, report: DuplicateRe
  * Loads the most recently modified report file, returning null when none exist.
  */
 export async function loadLatestReport(repoPath: string): Promise<DuplicateReport | null> {
-  const reportDir = join(repoPath, DRYSCAN_DIR, REPORTS_DIR);
+  const reportDir = upath.join(repoPath, DRYSCAN_DIR, REPORTS_DIR);
   let entries: string[];
   try {
     entries = await fs.readdir(reportDir);
@@ -37,7 +79,7 @@ export async function loadLatestReport(repoPath: string): Promise<DuplicateRepor
     entries
       .filter((name) => name.endsWith(".json"))
       .map(async (name) => {
-        const fullPath = join(reportDir, name);
+        const fullPath = upath.join(reportDir, name);
         const stat = await fs.stat(fullPath);
         return { name, fullPath, mtimeMs: stat.mtimeMs };
       })
@@ -72,7 +114,6 @@ export async function applyExclusionFromLatestReport(
     throw new Error("Duplicate group cannot be excluded because it lacks a pair key.");
   }
 
-  await configStore.init(repoPath);
   const config = await configStore.get(repoPath);
   const alreadyPresent = config.excludedPairs.includes(group.exclusionString);
   if (alreadyPresent) {

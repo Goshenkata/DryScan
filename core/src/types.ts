@@ -43,6 +43,16 @@ export interface DuplicateSide {
   unitType: IndexUnitType;
 }
 
+export interface DryConfig {
+  excludedPaths: string[];
+  excludedPairs: string[];
+  minLines: number;
+  minBlockLines: number;
+  threshold: number;
+  embeddingModel: string;
+  embeddingBaseUrl?: string;
+}
+
 export interface IndexUnit {
   id: string;
   name: string;

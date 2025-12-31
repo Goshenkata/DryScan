@@ -5,7 +5,7 @@ import { DryScanServiceDeps } from "./types";
 import { DuplicateAnalysisResult, DuplicateGroup, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { pairKeyForUnits, parsePairKey, pairKeyMatches } from "../pairs";
-import { DryConfig } from "../config/dryconfig";
+import { DryConfig } from "../types";
 
 const log = debug("DryScan:DuplicateService");
 

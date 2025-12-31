@@ -1,4 +1,4 @@
-import { DryConfig } from "../config/dryconfig";
+import { DryConfig } from "../types";
 import { configStore } from "../config/configStore";
 import { DryScanServiceDeps } from "./types";
 import { IndexUnitType } from "../types";

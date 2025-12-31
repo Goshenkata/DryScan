@@ -9,7 +9,7 @@ import { JavaExtractor } from "./extractors/java";
 import { minimatch } from "minimatch";
 import { FILE_CHECKSUM_ALGO } from "./const";
 import { configStore } from "./config/configStore";
-import { DryConfig } from "./config/dryconfig";
+import { DryConfig } from "./types";
 
 const log = debug("DryScan:Extractor");
 

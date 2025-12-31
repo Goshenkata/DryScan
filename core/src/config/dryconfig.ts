@@ -1,16 +1,7 @@
 import fs from "fs/promises";
 import upath from "upath";
 import { Validator, Schema } from "jsonschema";
-
-export interface DryConfig {
-  excludedPaths: string[];
-  excludedPairs: string[];
-  minLines: number;
-  minBlockLines: number;
-  threshold: number;
-  embeddingModel: string;
-  embeddingBaseUrl?: string;
-}
+import { DryConfig } from "../types";
 
 // Baseline config used when no file is present; exported so tests and constructors can seed defaults.
 export const DEFAULT_CONFIG: DryConfig = {

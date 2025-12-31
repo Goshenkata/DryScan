@@ -1,5 +1,6 @@
 import upath from "upath";
-import { DryConfig, resolveDryConfig, saveDryConfig } from "./dryconfig";
+import { DryConfig } from "../types";
+import { resolveDryConfig, saveDryConfig } from "./dryconfig";
 
 class ConfigStore {
   private readonly cache = new Map<string, DryConfig>();

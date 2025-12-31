@@ -11,7 +11,7 @@ import { DuplicateService } from "./services/DuplicateService";
 import { ExclusionService } from "./services/ExclusionService";
 import { DryScanServiceDeps } from "./services/types";
 import { configStore } from "./config/configStore";
-import { DryConfig } from "./config/dryconfig";
+import { DryConfig } from "./types";
 
 const log = debug("DryScan");
 
