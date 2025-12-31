@@ -8,7 +8,7 @@
     "dryscan": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc && mkdir -p dist/templates && cp src/templates/report.hbs dist/templates/report.hbs",
+    "build": "tsc && chmod +x dist/cli.js && mkdir -p dist/templates && cp src/templates/report.hbs dist/templates/report.hbs",
     "clean": "rm -rf dist",
     "test": "npm run test:unit && npm run test:bats",
     "test:unit": "tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\"",

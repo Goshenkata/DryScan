@@ -234,11 +234,26 @@ export async function performIncrementalUpdate(
       log(`Recomputed dependencies for ${affectedUnits.length} units`);
 
     // Step 5: Recompute embeddings for affected units only
-    const updatedWithEmbeddings = await Promise.all(
-      updatedWithDeps.map(fn => addEmbedding(repoPath, fn))
-    );
+    const total = updatedWithDeps.length;
+    if (total > 0) {
+      log(`Recomputing embeddings for ${total} units`);
+      const progressInterval = Math.max(1, Math.ceil(total / 10));
+      const updatedWithEmbeddings = [] as IndexUnit[];
+
+      for (let i = 0; i < total; i++) {
+        const enriched = await addEmbedding(repoPath, updatedWithDeps[i]);
+        updatedWithEmbeddings.push(enriched);
+
+        const completed = i + 1;
+        if (completed === total || completed % progressInterval === 0) {
+          const pct = Math.floor((completed / total) * 100);
+          console.log(`[DryScan] Incremental embeddings ${completed}/${total} (${pct}%)`);
+        }
+      }
+
       await db.updateUnits(updatedWithEmbeddings);
       log(`Recomputed embeddings for ${updatedWithEmbeddings.length} units`);
+    }
   }
 
   // Step 6: Update file tracking

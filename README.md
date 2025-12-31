@@ -7,7 +7,6 @@
 	- [x] Compute Duplication score
 	- [x] Refacor for maintainability
 	- [x] Write integration tests
-	- [ ] AI backend agnostic (Ollama, OpenAI, etc.
 
 - [ ] **VS Code Extension**
 	- [ ] Inline duplicate highlighting
@@ -18,6 +17,7 @@
 
 - [ ] **CI/CD Tools**
 	- [ ] Dockerized CLI
+	- [ ] Cloud AI
 	- [ ] GitHub Action
 	- [ ] Failure thresholds (block PRs)
 	- [ ] Duplication score in CI reports

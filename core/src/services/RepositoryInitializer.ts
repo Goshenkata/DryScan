@@ -1,14 +1,11 @@
 import path from "path";
 import fs from "fs/promises";
-import debug from "debug";
 import { DryScanServiceDeps } from "./types";
 import { ExclusionService } from "./ExclusionService";
 import { IndexUnit } from "../types";
 import { addEmbedding } from "../DryScanUpdater";
 import { FileEntity } from "../db/entities/FileEntity";
 import { IndexUnitExtractor } from "../IndexUnitExtractor";
-
-const log = debug("DryScan:InitService");
 
 export interface InitOptions {
   skipEmbeddings?: boolean;
@@ -23,20 +20,21 @@ export class RepositoryInitializer {
   async init(options?: InitOptions): Promise<void> {
     const extractor = this.deps.extractor;
 
-    log("Phase 1: Extracting index units...");
+    console.log("[DryScan] Phase 1/4: Extracting code units...");
     await this.initUnits(extractor);
-    log("Phase 2: Resolving internal dependencies for methods...");
+    console.log("[DryScan] Phase 2/4: Resolving internal dependencies...");
     await this.applyDependencies(extractor);
-    log("Phase 3: Computing embeddings for all units...");
+    console.log("[DryScan] Phase 3/4: Computing embeddings (may be slow)...");
     await this.computeEmbeddings(options?.skipEmbeddings === true);
-    log("Phase 4: Tracking files...");
+    console.log("[DryScan] Phase 4/4: Tracking files...");
     await this.trackFiles(extractor);
     await this.exclusionService.cleanupExcludedFiles();
+    console.log("[DryScan] Initialization phases complete.");
   }
 
   private async initUnits(extractor: IndexUnitExtractor): Promise<void> {
     const units = await extractor.scan(this.deps.repoPath);
-    log("Extracted %d index units.", units.length);
+    console.log(`[DryScan] Extracted ${units.length} index units.`);
     await this.deps.db.saveUnits(units);
   }
 
@@ -48,12 +46,28 @@ export class RepositoryInitializer {
 
   private async computeEmbeddings(skipEmbeddings: boolean): Promise<void> {
     if (skipEmbeddings) {
-      log("Skipping embedding computation by request.");
+      console.log("[DryScan] Skipping embedding computation by request.");
       return;
     }
     const allUnits: IndexUnit[] = await this.deps.db.getAllUnits();
-    log("Computing embeddings for %d units...", allUnits.length);
-    const updated: IndexUnit[] = await Promise.all(allUnits.map((unit) => addEmbedding(this.deps.repoPath, unit)));
+    const total = allUnits.length;
+    console.log(`[DryScan] Computing embeddings for ${total} units...`);
+
+    const updated: IndexUnit[] = [];
+    const progressInterval = Math.max(1, Math.ceil(total / 10));
+
+    for (let i = 0; i < total; i++) {
+      const unit = allUnits[i];
+      const enriched = await addEmbedding(this.deps.repoPath, unit);
+      updated.push(enriched);
+
+      const completed = i + 1;
+      if (completed === total || completed % progressInterval === 0) {
+        const pct = Math.floor((completed / total) * 100);
+        console.log(`[DryScan] Embeddings ${completed}/${total} (${pct}%)`);
+      }
+    }
+
     await this.deps.db.updateUnits(updated);
   }
 
@@ -74,6 +88,6 @@ export class RepositoryInitializer {
     }
 
     await this.deps.db.saveFiles(fileEntities);
-    log("Tracked %d files.", fileEntities.length);
+    console.log(`[DryScan] Tracked ${fileEntities.length} files.`);
   }
 }

@@ -1,6 +1,5 @@
 import upath from "upath";
 import fs from "fs/promises";
-import debug from "debug";
 import { DuplicateAnalysisResult, DuplicateReport } from "./types";
 import { DRYSCAN_DIR, INDEX_DB } from "./const";
 import { defaultExtractors, IndexUnitExtractor } from "./IndexUnitExtractor";
@@ -13,8 +12,6 @@ import { DryScanServiceDeps } from "./services/types";
 import { configStore } from "./config/configStore";
 import { DryConfig } from "./types";
 import { PairingService } from "./services/PairingService";
-
-const log = debug("DryScan");
 
 export type InitOptions = InitServiceOptions;
 
@@ -63,14 +60,16 @@ export class DryScan {
    * Phase 3: Compute and save semantic embeddings
    */
   async init(options?: InitOptions): Promise<void> {
-    log("Initializing DryScan repository at", this.repoPath);
+    console.log(`[DryScan] Initializing repository at ${this.repoPath}`);
+    console.log("[DryScan] Preparing database and cache...");
     await this.ensureDatabase();
     if (await this.isInitialized()) {
-      log("Repository already initialized.");
+      console.log("[DryScan] Repository already initialized; skipping full init.");
       return;
     }
+    console.log("[DryScan] Starting initial scan (may take a moment)...");
     await this.services.initializer.init(options);
-    log("DryScan initialization complete.");
+    console.log("[DryScan] Initial scan complete.");
   }
 
   /**
@@ -88,10 +87,11 @@ export class DryScan {
    * 7. Update file tracking metadata
    */
   async updateIndex(): Promise<void> {
-    log("Updating DryScan index at", this.repoPath);
+    console.log(`[DryScan] Updating index at ${this.repoPath}...`);
+    console.log("[DryScan] Checking for file changes...");
     await this.ensureDatabase();
     await this.services.updater.updateIndex();
-    log("Index update complete.");
+    console.log("[DryScan] Index update complete.");
   }
 
 
@@ -118,12 +118,12 @@ export class DryScan {
    * @returns Analysis result with duplicate groups and duplication score
    */
   private async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
-    log("Finding duplicates using configured threshold", config.threshold);
+    console.log(`[DryScan] Finding duplicates (threshold: ${config.threshold})...`);
     await this.ensureDatabase();
 
-    log("Step 1: Updating index to ensure latest code is analyzed...");
+    console.log("[DryScan] Updating index before duplicate analysis...");
     await this.updateIndex();
-    log("Index update complete. Proceeding with duplicate detection.");
+    console.log("[DryScan] Detecting duplicates...");
 
     return this.services.duplicate.findDuplicates(config);
   }
@@ -152,7 +152,7 @@ export class DryScan {
     if (!this.db.isInitialized()) return false;
     const unitCount = await this.db.countUnits();
     const initialized = unitCount > 0;
-    log("Initialization check: %d indexed units", unitCount);
+    console.log(`[DryScan] Initialization check: ${unitCount} indexed units`);
     return initialized;
   }
 }
