@@ -6,7 +6,7 @@
     - [x] add dryscan config
 	- [x] Compute Duplication score
 	- [x] Refacor for maintainability
-	- [ ] Write regression integration tests
+	- [x] Write integration tests
 	- [ ] AI backend agnostic (Ollama, OpenAI, etc.
 
 - [ ] **VS Code Extension**
