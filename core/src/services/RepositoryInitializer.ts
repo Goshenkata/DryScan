@@ -58,8 +58,15 @@ export class RepositoryInitializer {
 
     for (let i = 0; i < total; i++) {
       const unit = allUnits[i];
-      const enriched = await addEmbedding(this.deps.repoPath, unit);
-      updated.push(enriched);
+      try {
+        const enriched = await addEmbedding(this.deps.repoPath, unit);
+        updated.push(enriched);
+      } catch (err: any) {
+        console.error(
+          `[DryScan] Embedding failed for ${unit.filePath} (${unit.name}): ${err?.message || err}`
+        );
+        throw err;
+      }
 
       const completed = i + 1;
       if (completed === total || completed % progressInterval === 0) {

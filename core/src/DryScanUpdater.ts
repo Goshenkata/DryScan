@@ -241,8 +241,16 @@ export async function performIncrementalUpdate(
       const updatedWithEmbeddings = [] as IndexUnit[];
 
       for (let i = 0; i < total; i++) {
-        const enriched = await addEmbedding(repoPath, updatedWithDeps[i]);
-        updatedWithEmbeddings.push(enriched);
+        const unit = updatedWithDeps[i];
+        try {
+          const enriched = await addEmbedding(repoPath, unit);
+          updatedWithEmbeddings.push(enriched);
+        } catch (err: any) {
+          console.error(
+            `[DryScan] embedding failed for ${unit.filePath} (${unit.name}): ${err?.message || err}`
+          );
+          throw err;
+        }
 
         const completed = i + 1;
         if (completed === total || completed % progressInterval === 0) {
