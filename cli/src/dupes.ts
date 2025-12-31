@@ -1,11 +1,6 @@
 import { resolve } from 'path';
-import {
-  DryScan,
-  DuplicateAnalysisResult,
-  buildDuplicateReport,
-  writeDuplicateReport,
-  configStore,
-} from '@dryscan/core';
+import { DryScan, DuplicateReport, configStore } from '@dryscan/core';
+import { writeDuplicateReport } from './reports.js';
 import { DuplicateReportServer } from './uiServer.js';
 
 const UI_PORT = 3000;
@@ -27,12 +22,8 @@ function formatCodeSnippet(code: string, maxLines: number = 15): string {
   return formatted + (truncated ? `\n  ... │ (${lines.length - maxLines} more lines)` : '');
 }
 
-function formatDuplicates(
-  result: DuplicateAnalysisResult,
-  threshold: number,
-  reportPath?: string
-): void {
-  const { duplicates, score } = result;
+function formatDuplicates(report: DuplicateReport, reportPath?: string): void {
+  const { duplicates, score, threshold } = report;
 
   console.log('\n' + '═'.repeat(80));
   console.log(`\n📊 DUPLICATION SCORE: ${score.score.toFixed(2)}% - ${score.grade}`);
@@ -87,21 +78,16 @@ function formatDuplicates(
 export async function handleDupesCommand(path: string, options: DupesOptions): Promise<void> {
   const repoPath = resolve(path);
   await configStore.init(repoPath);
-  const config = await configStore.get(repoPath);
   const scanner = new DryScan(repoPath);
-  const result = await scanner.findDuplicates();
-  const displayThreshold = config.threshold;
-
-  const report = buildDuplicateReport(result.duplicates, displayThreshold, result.score);
+  const report = await scanner.buildDuplicateReport();
   const reportPath = await writeDuplicateReport(repoPath, report);
-  const output = { ...result, duplicates: report.duplicates };
 
   if (options.ui) {
     const server = new DuplicateReportServer({
       repoPath,
-      threshold: displayThreshold,
+      threshold: report.threshold,
       duplicates: report.duplicates,
-      score: result.score,
+      score: report.score,
       port: UI_PORT,
     });
     await server.start();
@@ -112,15 +98,14 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
     console.log(
       JSON.stringify(
         {
-          ...output,
+          ...report,
           reportPath,
-          generatedAt: report.generatedAt,
         },
         null,
         2
       )
     );
   } else {
-    formatDuplicates(output, displayThreshold, reportPath);
+    formatDuplicates(report, reportPath);
   }
 }

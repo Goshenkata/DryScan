@@ -1,16 +1,13 @@
 import { expect } from "chai";
 import fs from "fs/promises";
 import os from "os";
-import upath from "upath";
+import { join } from "path";
+import { loadDryConfig, IndexUnitType } from "@dryscan/core";
 import {
-  buildDuplicateReport,
   writeDuplicateReport,
   loadLatestReport,
   applyExclusionFromLatestReport,
 } from "../src/reports.ts";
-import { pairKeyForUnits } from "../src/pairs.ts";
-import { loadDryConfig } from "../src/config/dryconfig.ts";
-import { IndexUnitType } from "../src/types.ts";
 
 function makeSide(name, filePath) {
   return {
@@ -23,54 +20,53 @@ function makeSide(name, filePath) {
   };
 }
 
-function makeGroup() {
+function makeReport() {
   const left = makeSide("Foo", "src/foo.js");
   const right = makeSide("Bar", "src/bar.js");
+  const exclusionString = "function|Foo|Bar";
   return {
-    id: "g1",
-    similarity: 0.92,
-    left,
-    right,
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    threshold: 0.85,
+    score: {
+      score: 10,
+      grade: "Good",
+      totalLines: 100,
+      duplicateLines: 10,
+      duplicateGroups: 1,
+    },
+    duplicates: [
+      {
+        id: "g1",
+        similarity: 0.92,
+        left,
+        right,
+        shortId: "abc123",
+        exclusionString,
+      },
+    ],
   };
 }
 
-describe("Duplicate reports", function () {
+describe("CLI duplicate reports", function () {
   this.timeout(5000);
   let repoPath;
 
   beforeEach(async () => {
-    repoPath = await fs.mkdtemp(upath.join(os.tmpdir(), "dryscan-report-test-"));
+    repoPath = await fs.mkdtemp(join(os.tmpdir(), "dryscan-cli-report-test-"));
   });
 
   afterEach(async () => {
     await fs.rm(repoPath, { recursive: true, force: true });
   });
 
-  it("enriches duplicates with ids and exclusion strings", () => {
-    const group = makeGroup();
-    const report = buildDuplicateReport([group], 0.85, {
-      score: 10,
-      grade: "Good",
-      totalLines: 100,
-      duplicateLines: 10,
-      duplicateGroups: 1,
-    });
-
-    expect(report.duplicates).to.have.length(1);
-    const enriched = report.duplicates[0];
-    const expectedKey = pairKeyForUnits(enriched.left, enriched.right);
-    expect(enriched.shortId).to.be.a("string").that.is.not.empty;
-    expect(enriched.exclusionString).to.equal(expectedKey);
+  it("returns null when no reports exist", async () => {
+    const latest = await loadLatestReport(repoPath);
+    expect(latest).to.be.null;
   });
 
   it("writes and reloads the latest report", async () => {
-    const report = buildDuplicateReport([makeGroup()], 0.9, {
-      score: 12,
-      grade: "Fair",
-      totalLines: 200,
-      duplicateLines: 24,
-      duplicateGroups: 1,
-    });
+    const report = makeReport();
 
     const path = await writeDuplicateReport(repoPath, report);
     const stat = await fs.stat(path);
@@ -83,13 +79,7 @@ describe("Duplicate reports", function () {
   });
 
   it("applies exclusions from the latest report", async () => {
-    const report = buildDuplicateReport([makeGroup()], 0.8, {
-      score: 5,
-      grade: "Excellent",
-      totalLines: 50,
-      duplicateLines: 5,
-      duplicateGroups: 1,
-    });
+    const report = makeReport();
 
     await writeDuplicateReport(repoPath, report);
     const target = report.duplicates[0];

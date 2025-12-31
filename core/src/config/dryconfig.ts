@@ -27,7 +27,6 @@ const validator = new Validator();
 
 const partialConfigSchema: Schema = {
   type: "object",
-  additionalProperties: false,
   properties: {
     excludedPaths: { type: "array", items: { type: "string" } },
     excludedPairs: { type: "array", items: { type: "string" } },
@@ -80,21 +79,20 @@ async function readConfigFile(repoPath: string): Promise<Partial<DryConfig>> {
 }
 
 /**
- * Resolves the effective config for a repo: defaults -> file -> overrides (highest priority).
+ * Resolves the effective config for a repo using defaults merged with any file config.
  */
-export async function resolveDryConfig(repoPath: string, configOverrides?: Partial<DryConfig>): Promise<DryConfig> {
+export async function resolveDryConfig(repoPath: string): Promise<DryConfig> {
   const fileConfigRaw = await readConfigFile(repoPath);
   validateConfig(fileConfigRaw, partialConfigSchema, "Config file");
-  validateConfig(configOverrides ?? {}, partialConfigSchema, "Overrides");
 
-  const merged = { ...DEFAULT_CONFIG, ...fileConfigRaw, ...configOverrides };
+  const merged = { ...DEFAULT_CONFIG, ...fileConfigRaw };
   validateConfig(merged, fullConfigSchema, "Merged");
   return merged as DryConfig;
 }
 
 // Backwards-compatible helper used by existing callers (file + defaults).
-export async function loadDryConfig(repoPath: string, overrides?: Partial<DryConfig>): Promise<DryConfig> {
-  return resolveDryConfig(repoPath, overrides);
+export async function loadDryConfig(repoPath: string): Promise<DryConfig> {
+  return resolveDryConfig(repoPath);
 }
 
 export async function saveDryConfig(repoPath: string, config: DryConfig): Promise<void> {

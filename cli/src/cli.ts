@@ -2,11 +2,11 @@
 import { Command } from 'commander';
 import {
   DryScan,
-  applyExclusionFromLatestReport,
   configStore,
 } from '@dryscan/core';
 import { resolve } from 'path';
 import { handleDupesCommand } from './dupes.js';
+import { applyExclusionFromLatestReport } from './reports.js';
 
 const program = new Command();
 

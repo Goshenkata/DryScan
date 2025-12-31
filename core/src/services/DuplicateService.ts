@@ -5,7 +5,6 @@ import { DryScanServiceDeps } from "./types";
 import { DuplicateAnalysisResult, DuplicateGroup, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { pairKeyForUnits, parsePairKey, pairKeyMatches } from "../pairs";
-import { configStore } from "../config/configStore";
 import { DryConfig } from "../config/dryconfig";
 
 const log = debug("DryScan:DuplicateService");
@@ -15,9 +14,8 @@ export class DuplicateService {
 
   constructor(private readonly deps: DryScanServiceDeps) {}
 
-  async findDuplicates(): Promise<DuplicateAnalysisResult> {
-    this.config = await configStore.get(this.deps.repoPath);
-    const config = this.config;
+  async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
+    this.config = config;
     const allUnits = await this.deps.db.getAllUnits();
     const unitsWithEmbeddings = allUnits.filter((unit) => unit.embedding && unit.embedding.length > 0);
 
@@ -26,9 +24,9 @@ export class DuplicateService {
       return { duplicates: [], score };
     }
 
-  const thresholds = this.resolveThresholds(config.threshold);
+    const thresholds = this.resolveThresholds(config.threshold);
     const duplicates = this.computeDuplicates(unitsWithEmbeddings, thresholds);
-  const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
+    const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
     log("Found %d duplicate groups", filteredDuplicates.length);
 
     const score = this.computeDuplicationScore(filteredDuplicates, allUnits);
@@ -76,11 +74,14 @@ export class DuplicateService {
 
           const similarity = this.computeWeightedSimilarity(left, right);
           if (similarity >= threshold) {
+            const exclusionString = pairKeyForUnits(left, right);
+            if (!exclusionString) continue;
+
             duplicates.push({
               id: `${left.id}::${right.id}`,
               similarity,
               shortId: shortUuid.generate(),
-              exclusionString: pairKeyForUnits(left, right),
+              exclusionString,
               left: {
                 name: left.name,
                 filePath: left.filePath,

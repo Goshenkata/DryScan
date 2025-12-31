@@ -4,15 +4,8 @@ import { resolve, join } from "path";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import Handlebars from "handlebars";
-import {
-  DuplicateGroup,
-  DuplicationScore,
-  applyExclusionFromLatestReport,
-  DryScan,
-  buildDuplicateReport,
-  writeDuplicateReport,
-  configStore,
-} from "@dryscan/core";
+import { DuplicateGroup, DuplicationScore, DryScan, configStore } from "@dryscan/core";
+import { applyExclusionFromLatestReport, writeDuplicateReport } from "./reports.js";
 
 export interface UiServerOptions {
   port?: number;
@@ -160,16 +153,13 @@ export class DuplicateReportServer {
 
     const run = async () => {
       await this.configReady;
-      const config = await configStore.get(this.repoRoot);
-      const effectiveThreshold = config.threshold;
       const scanner = new DryScan(this.repoRoot);
-      const result = await scanner.findDuplicates();
-      const report = buildDuplicateReport(result.duplicates, effectiveThreshold, result.score);
+      const report = await scanner.buildDuplicateReport();
       await writeDuplicateReport(this.repoRoot, report);
       this.state = {
         duplicates: report.duplicates,
-        score: result.score,
-        threshold: effectiveThreshold,
+        score: report.score,
+        threshold: report.threshold,
       };
     };
 

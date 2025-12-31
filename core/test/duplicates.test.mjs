@@ -1,5 +1,4 @@
 import { expect } from "chai";
-import sinon from "sinon";
 import { DryScan } from "../src/DryScan.ts";
 import { IndexUnitType } from "../src/types.ts";
 import { DEFAULT_CONFIG } from "../src/config/dryconfig.ts";
@@ -46,7 +45,7 @@ describe("DryScan - Duplicate Detection", function() {
     await fs.rm(testDir, { recursive: true, force: true });
   });
 
-  describe("findDuplicates", () => {
+  describe("buildDuplicateReport", () => {
     async function stubbedScanner(units, configOverrides = {}) {
       const scanner = await createDryScanWithStubbedDB(testDir, {
         isInitialized: () => true,
@@ -72,8 +71,8 @@ describe("DryScan - Duplicate Detection", function() {
     it("returns empty array when no functions have embeddings", async () => {
       const units = [makeUnit("1", "fn1", undefined), makeUnit("2", "fn2", undefined)];
       const scanner = await stubbedScanner(units);
-      const result = await scanner.findDuplicates();
-      expect(result.duplicates).to.be.an("array").that.is.empty;
+      const report = await scanner.buildDuplicateReport();
+      expect(report.duplicates).to.be.an("array").that.is.empty;
     });
 
     it("throws if updateIndex fails", async () => {
@@ -81,7 +80,7 @@ describe("DryScan - Duplicate Detection", function() {
       const scanner = await stubbedScanner([]);
       scanner.updateIndex = async () => { throw error; };
       try {
-        await scanner.findDuplicates();
+        await scanner.buildDuplicateReport();
         throw new Error("Should have thrown");
       } catch (err) {
         expect(err.message).to.include("updateIndex failed");
@@ -94,8 +93,8 @@ describe("DryScan - Duplicate Detection", function() {
         makeUnit("2", "fn2", [0, 1]),
       ];
       const scanner = await stubbedScanner(units, { threshold: 0.9 });
-      const result = await scanner.findDuplicates();
-      expect(result.duplicates).to.be.an("array").that.is.empty;
+      const report = await scanner.buildDuplicateReport();
+      expect(report.duplicates).to.be.an("array").that.is.empty;
     });
 
     it("detects identical functions as duplicates", async () => {
@@ -104,12 +103,14 @@ describe("DryScan - Duplicate Detection", function() {
         makeUnit("2", "add2", [1, 0]),
       ];
       const scanner = await stubbedScanner(units, { threshold: 0.7 });
-      const result = await scanner.findDuplicates();
-      expect(result.duplicates.length).to.be.at.least(1);
-      const dup = result.duplicates[0];
+      const report = await scanner.buildDuplicateReport();
+      expect(report.duplicates.length).to.be.at.least(1);
+      const dup = report.duplicates[0];
       expect(dup).to.have.property("similarity").that.is.a("number");
       expect(dup).to.have.property("left");
       expect(dup).to.have.property("right");
+      expect(dup.shortId).to.be.a("string").that.is.not.empty;
+      expect(dup.exclusionString).to.be.a("string");
     });
 
     it("sorts duplicates by similarity descending", async () => {
@@ -119,8 +120,7 @@ describe("DryScan - Duplicate Detection", function() {
         makeUnit("3", "c", [0, 1]),
       ];
       const scanner = await stubbedScanner(units, { threshold: 0.4 });
-      const result = await scanner.findDuplicates();
-      const duplicates = result.duplicates;
+      const { duplicates } = await scanner.buildDuplicateReport();
       if (duplicates.length > 1) {
         for (let i = 0; i < duplicates.length - 1; i++) {
           expect(duplicates[i].similarity).to.be.at.least(duplicates[i + 1].similarity);
@@ -136,8 +136,8 @@ describe("DryScan - Duplicate Detection", function() {
       ];
       const lowScanner = await stubbedScanner(units, { threshold: 0.4 });
       const highScanner = await stubbedScanner(units, { threshold: 0.8 });
-      const low = await lowScanner.findDuplicates();
-      const high = await highScanner.findDuplicates();
+      const low = await lowScanner.buildDuplicateReport();
+      const high = await highScanner.buildDuplicateReport();
       expect(low.duplicates.length).to.be.at.least(high.duplicates.length);
     });
 
@@ -147,7 +147,7 @@ describe("DryScan - Duplicate Detection", function() {
         makeUnit("2", "func2", [1, 0]),
       ];
       const scanner = await stubbedScanner(units, { threshold: 0.4 });
-      const { duplicates } = await scanner.findDuplicates();
+      const { duplicates } = await scanner.buildDuplicateReport();
       if (duplicates.length > 0) {
         const dup = duplicates[0];
         expect(dup).to.have.property("id").that.is.a("string");

@@ -10,7 +10,7 @@ export interface DuplicateGroup {
   left: DuplicateSide;
   right: DuplicateSide;
   shortId: string;
-  exclusionString: string | null;
+  exclusionString: string;
 }
 
 export interface DuplicationScore {
@@ -24,6 +24,14 @@ export interface DuplicationScore {
 export interface DuplicateAnalysisResult {
   duplicates: DuplicateGroup[];
   score: DuplicationScore;
+}
+
+export interface DuplicateReport {
+  version: number;
+  generatedAt: string;
+  threshold: number;
+  score: DuplicationScore;
+  duplicates: DuplicateGroup[];
 }
 
 export interface DuplicateSide {

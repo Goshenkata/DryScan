@@ -9,11 +9,5 @@ export {
 	DuplicateSide,
 	IndexUnit,
 	IndexUnitType,
+	DuplicateReport,
 } from './types';
-export {
-	buildDuplicateReport,
-	writeDuplicateReport,
-	loadLatestReport,
-	applyExclusionFromLatestReport,
-	enrichDuplicates,
-} from './reports';

@@ -1,7 +1,7 @@
 import upath from "upath";
 import fs from "fs/promises";
 import debug from "debug";
-import { DuplicateAnalysisResult } from "./types";
+import { DuplicateAnalysisResult, DuplicateReport } from "./types";
 import { DRYSCAN_DIR, INDEX_DB } from "./const";
 import { defaultExtractors, IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
@@ -94,14 +94,28 @@ export class DryScan {
 
 
   /**
+   * Runs duplicate detection and returns a normalized report payload ready for persistence or display.
+   */
+  async buildDuplicateReport(): Promise<DuplicateReport> {
+    const config = await this.loadConfig();
+    const analysis = await this.findDuplicates(config);
+    return {
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      threshold: config.threshold,
+      score: analysis.score,
+      duplicates: analysis.duplicates,
+    };
+  }
+
+  /**
    * Finds duplicate code blocks using cosine similarity on embeddings.
    * Automatically updates the index before searching to ensure results are current.
    * Compares all function pairs and returns groups with similarity above the configured threshold.
    *
    * @returns Analysis result with duplicate groups and duplication score
    */
-  async findDuplicates(): Promise<DuplicateAnalysisResult> {
-    const config = await this.loadConfig();
+  private async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
     log("Finding duplicates using configured threshold", config.threshold);
     await this.ensureDatabase();
 
@@ -109,7 +123,7 @@ export class DryScan {
     await this.updateIndex();
     log("Index update complete. Proceeding with duplicate detection.");
 
-    return this.services.duplicate.findDuplicates();
+    return this.services.duplicate.findDuplicates(config);
   }
 
   /**
