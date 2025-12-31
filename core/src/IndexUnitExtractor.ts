@@ -11,7 +11,8 @@ import { JavaExtractor } from "./extractors/java";
 import { FILE_CHECKSUM_ALGO } from "./const";
 import { configStore } from "./config/configStore";
 import { DryConfig } from "./types";
-import { Gitignore } from "./Gitignore";
+import { Gitignore } from "./Gitignore"
+import { Ignore } from "ignore";
 
 const log = debug("DryScan:Extractor");
 
