@@ -1,6 +1,6 @@
 import upath from "upath";
 import { DryConfig } from "../types";
-import { resolveDryConfig, saveDryConfig } from "./dryconfig";
+import { ensureDefaultConfig, resolveDryConfig, saveDryConfig } from "./dryconfig";
 
 class ConfigStore {
   private readonly cache = new Map<string, DryConfig>();
@@ -34,7 +34,7 @@ class ConfigStore {
     const existing = this.loading.get(key);
     if (existing) return existing;
 
-    const promise = resolveDryConfig(repoPath).then((config) => {
+    const promise = ensureDefaultConfig(repoPath).then(() => resolveDryConfig(repoPath)).then((config) => {
       this.cache.set(key, config);
       this.loading.delete(key);
       return config;

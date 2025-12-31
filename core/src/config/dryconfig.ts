@@ -91,3 +91,22 @@ export async function saveDryConfig(repoPath: string, config: DryConfig): Promis
   validateConfig(config, fullConfigSchema, "Config to save");
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
 }
+
+export async function ensureDefaultConfig(repoPath: string): Promise<void> {
+  const configPath = upath.join(repoPath, ".dryconfig.json");
+  const repoExists = await fs.stat(repoPath).then((s) => s.isDirectory()).catch((err: any) => {
+    if (err?.code === "ENOENT") return false;
+    throw err;
+  });
+
+  if (!repoExists) return;
+
+  const exists = await fs.stat(configPath).then(() => true).catch((err: any) => {
+    if (err?.code === "ENOENT") return false;
+    throw err;
+  });
+
+  if (!exists) {
+    await saveDryConfig(repoPath, DEFAULT_CONFIG);
+  }
+}

@@ -62,6 +62,7 @@ export class DryScan {
   async init(options?: InitOptions): Promise<void> {
     console.log(`[DryScan] Initializing repository at ${this.repoPath}`);
     console.log("[DryScan] Preparing database and cache...");
+    await configStore.init(this.repoPath);
     await this.ensureDatabase();
     if (await this.isInitialized()) {
       console.log("[DryScan] Repository already initialized; skipping full init.");
