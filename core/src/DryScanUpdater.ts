@@ -72,7 +72,7 @@ export async function detectFileChanges(
       if (currentChecksum !== tracked.checksum) {
         changed.push(filePath);
       } else {
-        // Mtime changed but content same (e.g., touch command)
+        // Mtime changed but content same
         unchanged.push(filePath);
       }
     } else {
@@ -100,14 +100,14 @@ export async function extractUnitsFromFiles(
   filePaths: string[],
   extractor: IndexUnitExtractor
 ): Promise<IndexUnit[]> {
-  const allFunctions: IndexUnit[] = [];
+  const allUnits: IndexUnit[] = [];
   
   for (const relPath of filePaths) {
     const functions = await extractor.scan(relPath);
-    allFunctions.push(...functions);
+    allUnits.push(...functions);
   }
   
-  return allFunctions;
+  return allUnits;
 }
 
 /**
