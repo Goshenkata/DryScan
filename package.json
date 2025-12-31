@@ -11,7 +11,6 @@
     "cli"
   ],
   "scripts": {
-    "pretest": "npm run build --workspace @dryscan/core",
     "build": "npm run build --workspaces",
     "clean": "npm run clean --workspaces",
     "test": "npm run test --workspaces",

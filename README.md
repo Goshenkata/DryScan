@@ -5,9 +5,9 @@
 	- [x] [ADR-002: AI triviality detection](.github/docs/adr-002-static-triviality-filtering.md)
     - [x] add dryscan config
 	- [x] Compute Duplication score
-	- [ ] Refacor for maintainability
-	- [ ] AI backend agnostic (Ollama, OpenAI, etc.
+	- [x] Refacor for maintainability
 	- [ ] Write regression integration tests
+	- [ ] AI backend agnostic (Ollama, OpenAI, etc.
 
 - [ ] **VS Code Extension**
 	- [ ] Inline duplicate highlighting
