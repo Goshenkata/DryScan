@@ -8,6 +8,9 @@
 	- [x] Refacor for maintainability
 	- [x] Write integration tests
 	- [x] Fix model context winow issue for large files
+	- [ ] Caching of comparisons
+	- [ ] remove method call chain fluff
+	- [x] remove of nesting blocks from comparison
 
 - [ ] **VS Code Extension**
 	- [ ] Inline duplicate highlighting
@@ -24,7 +27,6 @@
 	- [ ] Duplication score in CI reports
 
 - [ ] **Nice to do**
-	- [ ] remove method call chain fluff
     - [ ] Use real static code analisys
 	- [ ] Cross-repo analysis 
 # DryScan

@@ -9,7 +9,7 @@ Accepted
 - Duplicate detection uses embeddings to compute similarity and thresholds across unit types.
 
 ## Decision
-- Add a configurable `contextLength` (default 2048) to `.dryconfig.json`.
+- Add a configurable `contextLength` (default 2048) to `dryconfig.json`.
 - Skip embedding any unit whose `code` length exceeds `contextLength`; store `embedding = null` and log the skip.
 - When an embedding is null, compute similarity by comparing children (including slice children created for oversized blocks) and taking the best match; parent similarity also uses the same fallback.
 - Keep thresholds/weights logic unchanged; only the similarity source changes (direct vector vs child fallback).

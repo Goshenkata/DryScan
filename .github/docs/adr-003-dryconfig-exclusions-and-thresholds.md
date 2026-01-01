@@ -7,7 +7,7 @@ Accepted
 DryScan needed a user-facing way to tune noise reduction without code changes: skip known noisy paths, suppress specific duplicate pairs, and adjust sensitivity (thresholds and size limits). Previously, indexing always processed all supported files, thresholds were fixed in code, and exclusions were ad hoc. We also lacked a mechanism to prune stale exclusions after refactors.
 
 ## Decision
-- Add a repository-level `.dryconfig.json` read by core/CLI containing:
+- Add a repository-level `dryconfig.json` read by core/CLI containing:
   - `excludedPaths` (globs) to skip during extraction and to remove from the DB after init/update.
   - `excludedPairs` strings representing class/function/block pairs to suppress in `dupes`.
   - `maxLines`, `maxBlockLines` to cap indexed classes/functions/blocks; `threshold` to override default duplicate threshold.
@@ -17,7 +17,7 @@ DryScan needed a user-facing way to tune noise reduction without code changes: s
   - Block: normalized (comments/whitespace-stripped) hash of the block code.
 - Apply exclusions when emitting duplicates; maintain order-insensitive matching.
 - Add `dryscan clean` to drop `excludedPairs` that no longer match any indexed units after an `update`.
-- Threshold priority: CLI arg > `.dryconfig.json` > built-in defaults.
+- Threshold priority: CLI arg > `dryconfig.json` > built-in defaults.
 
 ## Consequences
 - Users can declaratively suppress false positives and tune sensitivity without code changes.
@@ -27,4 +27,4 @@ DryScan needed a user-facing way to tune noise reduction without code changes: s
 
 ## Notes
 - Pair-key computation and exclusion matching are centralized to keep CLI/core behavior consistent.
-- Config loading is best-effort; missing `.dryconfig.json` falls back to safe defaults.
+- Config loading is best-effort; missing `dryconfig.json` falls back to safe defaults.

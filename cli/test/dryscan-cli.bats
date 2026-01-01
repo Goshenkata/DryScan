@@ -201,7 +201,7 @@ EOF
   [ "${status}" -eq 0 ]
   units_before=$(sqlite_query "SELECT COUNT(*) FROM index_units;")
 
-  cat > .dryconfig.json <<'JSON'
+  cat > dryconfig.json <<'JSON'
 {
   "excludedPaths": ["**/model/**"],
   "excludedPairs": ["FUNCTION|getUserById(arity:1)|getUserById(arity:1)"],
@@ -231,7 +231,7 @@ JSON
   run_dryscan init "${TEST_ROOT}"
   [ "${status}" -eq 0 ]
 
-  cat > .dryconfig.json <<'JSON'
+  cat > dryconfig.json <<'JSON'
 {
   "excludedPaths": [],
   "excludedPairs": ["FUNCTION|getUserById(arity:1)|getUserById(arity:1)"],
@@ -309,7 +309,7 @@ EOF
 
   remaining_pairs=$(python - <<'PY'
 import json, pathlib
-cfg = json.loads(pathlib.Path('.dryconfig.json').read_text())
+cfg = json.loads(pathlib.Path('dryconfig.json').read_text())
 print(len(cfg.get('excludedPairs', [])))
 PY
   )
@@ -346,7 +346,7 @@ EOF
 }
 
 @test "context length skips embeddings for oversized units" {
-  cat > .dryconfig.json <<'JSON'
+  cat > dryconfig.json <<'JSON'
 {
   "contextLength": 32
 }
@@ -382,4 +382,48 @@ EOF
 
   run_dryscan dupes --json "${TEST_ROOT}"
   [ "${status}" -eq 0 ]
+}
+
+@test "skips dto-only classes and members" {
+  cat > dryconfig.json <<'JSON'
+{
+  "minLines": 0,
+  "minBlockLines": 0
+}
+JSON
+
+  mkdir -p src/main/java/com/example/demo/model
+  cat > src/main/java/com/example/demo/model/CustomerDto.java <<'EOF'
+package com.example.demo.model;
+
+public class CustomerDto {
+    private String id;
+    private String name;
+
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+}
+EOF
+
+  mkdir -p src/main/java/com/example/demo/service
+  cat > src/main/java/com/example/demo/service/Worker.java <<'EOF'
+package com.example.demo.service;
+
+public class Worker {
+    public String doWork() {
+        return "working";
+    }
+}
+EOF
+
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  dto_units=$(sqlite_query "SELECT COUNT(*) FROM index_units WHERE name LIKE 'CustomerDto%';")
+  [ "${dto_units}" -eq 0 ]
+
+  worker_units=$(sqlite_query "SELECT COUNT(*) FROM index_units WHERE name LIKE 'Worker.%';")
+  [ "${worker_units}" -gt 0 ]
 }

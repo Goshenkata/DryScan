@@ -51,7 +51,7 @@ dupesCommand
 
 dupesCommand
   .command('exclude')
-  .description('Add the duplicate pair identified by short id to .dryconfig.json from the latest report')
+  .description('Add the duplicate pair identified by short id to dryconfig.json from the latest report')
   .argument('<id>', 'Short id from the latest dryscan report')
   .argument('[path]', 'Repository path', '.')
   .action(async (id: string, path: string) => {

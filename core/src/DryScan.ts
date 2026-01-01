@@ -90,9 +90,11 @@ export class DryScan {
   async updateIndex(): Promise<void> {
     console.log(`[DryScan] Updating index at ${this.repoPath}...`);
     console.log("[DryScan] Checking for file changes...");
+    const start = Date.now();
     await this.ensureDatabase();
     await this.services.updater.updateIndex();
-    console.log("[DryScan] Index update complete.");
+    const duration = Date.now() - start;
+    console.log(`[DryScan] Index update complete. Took ${duration}ms.`);
   }
 
 
@@ -122,11 +124,19 @@ export class DryScan {
     console.log(`[DryScan] Finding duplicates (threshold: ${config.threshold})...`);
     await this.ensureDatabase();
 
-    console.log("[DryScan] Updating index before duplicate analysis...");
+    console.log("[DryScan] Updating index...");
+    const updateStart = Date.now();
     await this.updateIndex();
-    console.log("[DryScan] Detecting duplicates...");
+    const updateDuration = Date.now() - updateStart;
+    console.log(`[DryScan] Index update  took ${updateDuration}ms.`);
 
-    return this.services.duplicate.findDuplicates(config);
+    console.log("[DryScan] Detecting duplicates...");
+    const dupStart = Date.now();
+    const result = await this.services.duplicate.findDuplicates(config);
+    const dupDuration = Date.now() - dupStart;
+    console.log(`[DryScan] Duplicate detection took ${dupDuration}ms.`);
+
+    return result;
   }
 
   /**
