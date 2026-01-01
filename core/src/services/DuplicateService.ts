@@ -5,11 +5,13 @@ import { DryScanServiceDeps } from "./types";
 import { DuplicateAnalysisResult, DuplicateGroup, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { DryConfig } from "../types";
+import { DuplicationCache } from "./DuplicationCache";
 
 const log = debug("DryScan:DuplicateService");
 
 export class DuplicateService {
   private config?: DryConfig;
+  private readonly cache = DuplicationCache.getInstance();
 
   constructor(private readonly deps: DryScanServiceDeps) {}
 
@@ -25,6 +27,9 @@ export class DuplicateService {
     const duplicates = this.computeDuplicates(allUnits, thresholds);
     const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
     log("Found %d duplicate groups", filteredDuplicates.length);
+
+    // Update cache asynchronously; no need to block the main flow.
+    this.cache.update(filteredDuplicates).catch((err) => log("Cache update failed: %O", err));
 
     const score = this.computeDuplicationScore(filteredDuplicates, allUnits);
     return { duplicates: filteredDuplicates, score };
@@ -69,9 +74,18 @@ export class DuplicateService {
 
           if (this.shouldSkipComparison(left, right)) continue;
 
-          if (!left.embedding || !right.embedding) continue;
+          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
+          let similarity: number | null = null;
 
-          const similarity = this.computeWeightedSimilarity(left, right);
+          if (cached !== null) {
+            similarity = cached;
+          } else {
+            if (!left.embedding || !right.embedding) continue;
+            similarity = this.computeWeightedSimilarity(left, right);
+          }
+
+          if (similarity === null) continue;
+
           if (similarity >= threshold) {
             const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
             if (!exclusionString) continue;
@@ -82,6 +96,7 @@ export class DuplicateService {
               shortId: shortUuid.generate(),
               exclusionString,
               left: {
+                id: left.id,
                 name: left.name,
                 filePath: left.filePath,
                 startLine: left.startLine,
@@ -90,6 +105,7 @@ export class DuplicateService {
                 unitType: left.unitType,
               },
               right: {
+                id: right.id,
                 name: right.name,
                 filePath: right.filePath,
                 startLine: right.startLine,

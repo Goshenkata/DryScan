@@ -35,6 +35,7 @@ export interface DuplicateReport {
 }
 
 export interface DuplicateSide {
+  id: string;
   name: string;
   filePath: string;
   startLine: number;

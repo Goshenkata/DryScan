@@ -197,7 +197,7 @@ export async function performIncrementalUpdate(
   repoPath: string,
   extractor: IndexUnitExtractor,
   db: DryScanDatabase,
-): Promise<void> {
+): Promise<FileChangeSet> {
   log("Starting incremental update");
   
   // Step 1: Detect changes
@@ -207,7 +207,7 @@ export async function performIncrementalUpdate(
       changeSet.added.length === 0 && 
       changeSet.deleted.length === 0) {
     log("No changes detected. Index is up to date.");
-    return;
+    return changeSet;
   }
 
   log(`Changes detected: ${changeSet.added.length} added, ${changeSet.changed.length} changed, ${changeSet.deleted.length} deleted`);
@@ -272,4 +272,6 @@ export async function performIncrementalUpdate(
   // Step 6: Update file tracking
   await updateFileTracking(changeSet, repoPath, extractor, db);
   log("Incremental update complete");
+
+  return changeSet;
 }
