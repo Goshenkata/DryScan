@@ -67,6 +67,8 @@ export class DuplicateService {
           const left = typedUnits[i];
           const right = typedUnits[j];
 
+          if (this.shouldSkipComparison(left, right)) continue;
+
           if (!left.embedding || !right.embedding) continue;
 
           const similarity = this.computeWeightedSimilarity(left, right);
@@ -182,6 +184,20 @@ export class DuplicateService {
 
   private hasVector(unit: IndexUnit): boolean {
     return Array.isArray(unit.embedding) && unit.embedding.length > 0;
+  }
+
+  private shouldSkipComparison(left: IndexUnit, right: IndexUnit): boolean {
+    if (left.unitType !== IndexUnitType.BLOCK || right.unitType !== IndexUnitType.BLOCK) {
+      return false;
+    }
+
+    if (left.filePath !== right.filePath) {
+      return false;
+    }
+
+    const leftContainsRight = left.startLine <= right.startLine && left.endLine >= right.endLine;
+    const rightContainsLeft = right.startLine <= left.startLine && right.endLine >= left.endLine;
+    return leftContainsRight || rightContainsLeft;
   }
 
   private findParentOfType(unit: IndexUnit, targetType: IndexUnitType): IndexUnit | null {

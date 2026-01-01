@@ -1,9 +1,11 @@
 {
-  "excludedPaths": [],
+  "excludedPaths": [
+    "**/test/**"
+  ],
   "excludedPairs": [],
   "minLines": 0,
   "minBlockLines": 5,
-  "threshold": 0.85,
+  "threshold": 0.89,
   "embeddingModel": "embeddinggemma",
   "embeddingBaseUrl": "http://localhost:11434",
   "contextLength": 2048

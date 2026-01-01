@@ -156,5 +156,27 @@ describe("DryScan - Duplicate Detection", function() {
         expect(dup.right).to.include.keys(["filePath", "startLine", "endLine", "code"]);
       }
     });
+
+    it("skips comparisons for nested blocks in same file", async () => {
+      const block = (id, name, start, end) => ({
+        id,
+        name,
+        filePath: "Sample.java",
+        startLine: start,
+        endLine: end,
+        code: "block code",
+        unitType: IndexUnitType.BLOCK,
+        embedding: [1, 0],
+      });
+
+      const units = [
+        block("block:outer", "outer", 10, 40),
+        block("block:inner", "inner", 20, 25),
+      ];
+
+      const scanner = await stubbedScanner(units, { threshold: 0.1 });
+      const { duplicates } = await scanner.buildDuplicateReport();
+      expect(duplicates).to.be.an("array").that.is.empty;
+    });
   });
 });

@@ -265,7 +265,7 @@ export class JavaExtractor implements LanguageExtractor {
   }
 
   private stripAnnotations(code: string): string {
-    return code.replace(/@\w+(?:\s*\([^)]*\))?/g, "");
+    return code.replace(/@[\w.]+(?:\s*\([^)]*\))?/g, "");
   }
 
   private buildFunctionUnit(
@@ -278,13 +278,13 @@ export class JavaExtractor implements LanguageExtractor {
     const startLine = node.startPosition.row;
     const endLine = node.endPosition.row;
     const id = this.buildId(IndexUnitType.FUNCTION, name, startLine, endLine);
-    const unit: IndexUnit = {
+      const unit: IndexUnit = {
       id,
       name,
       filePath: file,
       startLine,
       endLine,
-      code: this.stripAnnotations(source.slice(node.startIndex, node.endIndex)),
+        code: this.stripAnnotations(source.slice(node.startIndex, node.endIndex)),
       unitType: IndexUnitType.FUNCTION,
       parentId: parentClass?.id,
       parent: parentClass,

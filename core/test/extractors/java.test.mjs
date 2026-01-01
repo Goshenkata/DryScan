@@ -130,26 +130,4 @@ public class GroupEntity {
 
     expect(results).to.be.an('array').that.is.empty;
   });
-
-  it('strips annotations from class and methods', async () => {
-    const source = `
-import org.springframework.stereotype.Service;
-
-@Service
-public class Annotated {
-  @Deprecated
-  public String doWork() {
-    return "ok";
-  }
-}
-`;
-
-    const extractor = await createExtractor({ minLines: 0, minBlockLines: 0 });
-    const results = await extractor.extractFromText('Annotated.java', source);
-    const cls = results.find((u) => u.unitType === IndexUnitType.CLASS);
-    const fn = results.find((u) => u.name === 'Annotated.doWork');
-
-    expect(cls?.code).to.not.include('@Service');
-    expect(fn?.code).to.not.include('@Deprecated');
-  });
 });

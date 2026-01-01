@@ -5,11 +5,13 @@ import { DryConfig } from "../types";
 
 // Baseline config used when no file is present; exported so tests and constructors can seed defaults.
 export const DEFAULT_CONFIG: DryConfig = {
-  excludedPaths: [],
+  excludedPaths: [
+    "**/test/**",
+  ],
   excludedPairs: [],
   minLines: 3,
   minBlockLines: 5,
-  threshold: 0.85,
+  threshold: 0.89,
   embeddingModel: "embeddinggemma",
   embeddingBaseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
   contextLength: 2048,
