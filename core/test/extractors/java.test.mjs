@@ -4,13 +4,14 @@ import fs from "fs/promises";
 import { JavaExtractor } from "../../src/extractors/java.ts";
 import { DEFAULT_CONFIG } from "../../src/config/dryconfig.ts";
 import { configStore } from "../../src/config/configStore.ts";
+import { IndexUnitType } from "../../src/types.ts";
 
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 const repoRoot = resourcesDir;
 
 async function writeConfig(overrides = {}) {
   const next = { ...DEFAULT_CONFIG, ...overrides };
-  await fs.writeFile(path.join(repoRoot, '.dryconfig.json'), JSON.stringify(next, null, 2), 'utf8');
+  await fs.writeFile(path.join(repoRoot, 'dryconfig.json'), JSON.stringify(next, null, 2), 'utf8');
 }
 
 async function createExtractor(overrides = {}) {
@@ -78,5 +79,77 @@ public class A {
 
     expect(names).to.include('A.longer');
     expect(names).to.not.include('A.shorty');
+  });
+
+  it('skips DTO-style classes and their members', async () => {
+    const source = `
+public class UserDto {
+  private String id;
+  private String name;
+
+  public String getId() { return id; }
+  public void setId(String id) { this.id = id; }
+}
+`;
+
+    const extractor = await createExtractor({ minLines: 0, minBlockLines: 0 });
+    const results = await extractor.extractFromText('UserDto.java', source);
+
+    expect(results).to.be.an('array').that.is.empty;
+  });
+
+  it('skips DTO-style classes even with annotations', async () => {
+    const source = `
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Entity
+@Data
+@NoArgsConstructor
+public class GroupEntity {
+
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
+
+  private String name;
+
+  public Long getId() { return id; }
+  public void setId(Long id) { this.id = id; }
+  public String getName() { return name; }
+  public void setName(String name) { this.name = name; }
+}
+`;
+
+    const extractor = await createExtractor({ minLines: 0, minBlockLines: 0 });
+    const results = await extractor.extractFromText('GroupEntity.java', source);
+
+    expect(results).to.be.an('array').that.is.empty;
+  });
+
+  it('strips annotations from class and methods', async () => {
+    const source = `
+import org.springframework.stereotype.Service;
+
+@Service
+public class Annotated {
+  @Deprecated
+  public String doWork() {
+    return "ok";
+  }
+}
+`;
+
+    const extractor = await createExtractor({ minLines: 0, minBlockLines: 0 });
+    const results = await extractor.extractFromText('Annotated.java', source);
+    const cls = results.find((u) => u.unitType === IndexUnitType.CLASS);
+    const fn = results.find((u) => u.name === 'Annotated.doWork');
+
+    expect(cls?.code).to.not.include('@Service');
+    expect(fn?.code).to.not.include('@Deprecated');
   });
 });

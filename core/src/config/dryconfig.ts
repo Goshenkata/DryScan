@@ -54,7 +54,7 @@ function validateConfig(raw: unknown, schema: Schema, source: string): any {
 }
 
 async function readConfigFile(repoPath: string): Promise<Partial<DryConfig>> {
-  const configPath = upath.join(repoPath, ".dryconfig.json");
+  const configPath = upath.join(repoPath, "dryconfig.json");
   try {
     const content = await fs.readFile(configPath, "utf8");
     let parsed: Partial<DryConfig> = {};
@@ -90,13 +90,13 @@ export async function loadDryConfig(repoPath: string): Promise<DryConfig> {
 }
 
 export async function saveDryConfig(repoPath: string, config: DryConfig): Promise<void> {
-  const configPath = upath.join(repoPath, ".dryconfig.json");
+  const configPath = upath.join(repoPath, "dryconfig.json");
   validateConfig(config, fullConfigSchema, "Config to save");
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
 }
 
 export async function ensureDefaultConfig(repoPath: string): Promise<void> {
-  const configPath = upath.join(repoPath, ".dryconfig.json");
+  const configPath = upath.join(repoPath, "dryconfig.json");
   const repoExists = await fs.stat(repoPath).then((s) => s.isDirectory()).catch((err: any) => {
     if (err?.code === "ENOENT") return false;
     throw err;

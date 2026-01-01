@@ -15,7 +15,7 @@ describe("DryScan - Duplicate Detection", function() {
   // Helper to create a DryScan instance with a stubbed DB
   async function writeConfig(dir, overrides = {}) {
     const next = { ...DEFAULT_CONFIG, ...overrides };
-    await fs.writeFile(upath.join(dir, ".dryconfig.json"), JSON.stringify(next, null, 2), "utf8");
+    await fs.writeFile(upath.join(dir, "dryconfig.json"), JSON.stringify(next, null, 2), "utf8");
   }
 
   async function createDryScanWithStubbedDB(testDir, dbOverrides = {}, configOverrides = {}) {

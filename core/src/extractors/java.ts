@@ -46,12 +46,15 @@ export class JavaExtractor implements LanguageExtractor {
     const visit = (node: Parser.SyntaxNode, currentClass?: IndexUnit) => {
       if (this.isClassNode(node)) {
         const className = this.getClassName(node, source) || "<anonymous>";
+        if (this.isDtoClass(node, source, className)) {
+          return;
+        }
         const startLine = node.startPosition.row;
         const endLine = node.endPosition.row;
         const classLength = endLine - startLine;
         const skipClass = this.shouldSkip(IndexUnitType.CLASS, className, classLength);
         const classId = this.buildId(IndexUnitType.CLASS, className, startLine, endLine);
-        const code = this.stripClassBody(node, source);
+        const code = this.stripAnnotations(this.stripClassBody(node, source));
         const classUnit: IndexUnit = {
           id: classId,
           name: className,
@@ -222,6 +225,49 @@ export class JavaExtractor implements LanguageExtractor {
     return isGetter || isSetter;
   }
 
+  private isDtoClass(node: Parser.SyntaxNode, source: string, className: string): boolean {
+    const classBody = node.children.find((child) => child.type === "class_body");
+    if (!classBody) return false;
+
+    let hasField = false;
+
+    for (let i = 0; i < classBody.namedChildCount; i++) {
+      const child = classBody.namedChild(i);
+      if (!child) continue;
+
+      if (child.type === "field_declaration") {
+        hasField = true;
+        continue;
+      }
+
+      if (child.type.includes("annotation")) {
+        continue;
+      }
+
+      if (child.type === "method_declaration" || child.type === "constructor_declaration") {
+        const simpleName = this.getSimpleFunctionName(child, source);
+        const fullName = `${className}.${simpleName}`;
+        if (!this.isTrivialFunction(fullName)) {
+          return false;
+        }
+        continue;
+      }
+
+      return false;
+    }
+
+    return hasField;
+  }
+
+  private getSimpleFunctionName(node: Parser.SyntaxNode, source: string): string {
+    const nameNode = node.childForFieldName?.("name");
+    return nameNode ? source.slice(nameNode.startIndex, nameNode.endIndex) : "<anonymous>";
+  }
+
+  private stripAnnotations(code: string): string {
+    return code.replace(/@\w+(?:\s*\([^)]*\))?/g, "");
+  }
+
   private buildFunctionUnit(
     node: Parser.SyntaxNode,
     source: string,
@@ -238,7 +284,7 @@ export class JavaExtractor implements LanguageExtractor {
       filePath: file,
       startLine,
       endLine,
-      code: source.slice(node.startIndex, node.endIndex),
+      code: this.stripAnnotations(source.slice(node.startIndex, node.endIndex)),
       unitType: IndexUnitType.FUNCTION,
       parentId: parentClass?.id,
       parent: parentClass,
@@ -274,7 +320,7 @@ export class JavaExtractor implements LanguageExtractor {
             filePath: file,
             startLine,
             endLine,
-            code: source.slice(n.startIndex, n.endIndex),
+            code: this.stripAnnotations(source.slice(n.startIndex, n.endIndex)),
             unitType: IndexUnitType.BLOCK,
             parentId: parentFunction.id,
             parent: parentFunction,

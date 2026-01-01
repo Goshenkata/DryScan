@@ -17,7 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const baseConfig = () => ({ ...DEFAULT_CONFIG, minLines: 0 });
 const writeConfig = async (repoPath, config) => {
-  await fs.writeFile(path.join(repoPath, ".dryconfig.json"), JSON.stringify(config, null, 2), "utf8");
+  await fs.writeFile(path.join(repoPath, "dryconfig.json"), JSON.stringify(config, null, 2), "utf8");
 };
 
 /**

@@ -17,7 +17,7 @@ describe('JavaExtractor - Call Extraction', () => {
   before(async () => {
     file = path.join(resourcesDir, 'CallerSample.java');
     source = await fs.readFile(file, 'utf8');
-    const configPath = path.join(repoRoot, '.dryconfig.json');
+    const configPath = path.join(repoRoot, 'dryconfig.json');
     await fs.writeFile(configPath, JSON.stringify({ ...DEFAULT_CONFIG, minLines: 0 }, null, 2), 'utf8');
     await configStore.init(repoRoot);
     extractor = new JavaExtractor(repoRoot);
