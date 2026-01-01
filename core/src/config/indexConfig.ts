@@ -1,9 +1,9 @@
 export const indexConfig = {
   blockMinLines: 5,
   thresholds: {
-    class: 0.87,
-    function: 0.87,
-    block: 0.87,
+    class: 0.88,
+    function: 0.88,
+    block: 0.88,
   },
   weights: {
     class: { self: 1 },
