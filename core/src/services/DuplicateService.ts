@@ -16,15 +16,13 @@ export class DuplicateService {
   async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
     this.config = config;
     const allUnits = await this.deps.db.getAllUnits();
-    const unitsWithEmbeddings = allUnits.filter((unit) => unit.embedding && unit.embedding.length > 0);
-
-    if (unitsWithEmbeddings.length < 2) {
+    if (allUnits.length < 2) {
       const score = this.computeDuplicationScore([], allUnits);
       return { duplicates: [], score };
     }
 
     const thresholds = this.resolveThresholds(config.threshold);
-    const duplicates = this.computeDuplicates(unitsWithEmbeddings, thresholds);
+    const duplicates = this.computeDuplicates(allUnits, thresholds);
     const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
     log("Found %d duplicate groups", filteredDuplicates.length);
 
@@ -126,9 +124,7 @@ export class DuplicateService {
   }
 
   private computeWeightedSimilarity(left: IndexUnit, right: IndexUnit): number {
-    if (!left.embedding || !right.embedding) return 0;
-
-    const selfSimilarity = cosineSimilarity([left.embedding], [right.embedding])[0][0];
+    const selfSimilarity = this.similarityWithFallback(left, right);
 
     if (left.unitType === IndexUnitType.CLASS) {
       return selfSimilarity * indexConfig.weights.class.self;
@@ -153,8 +149,39 @@ export class DuplicateService {
   private parentSimilarity(left: IndexUnit, right: IndexUnit, targetType: IndexUnitType): number {
     const leftParent = this.findParentOfType(left, targetType);
     const rightParent = this.findParentOfType(right, targetType);
-    if (!leftParent || !rightParent || !leftParent.embedding || !rightParent.embedding) return 0;
-    return cosineSimilarity([leftParent.embedding], [rightParent.embedding])[0][0];
+    if (!leftParent || !rightParent) return 0;
+    return this.similarityWithFallback(leftParent, rightParent);
+  }
+
+  private similarityWithFallback(left: IndexUnit, right: IndexUnit): number {
+    const leftHasEmbedding = this.hasVector(left);
+    const rightHasEmbedding = this.hasVector(right);
+
+    if (leftHasEmbedding && rightHasEmbedding) {
+      return cosineSimilarity([left.embedding as number[]], [right.embedding as number[]])[0][0];
+    }
+
+    return this.childSimilarity(left, right);
+  }
+
+  private childSimilarity(left: IndexUnit, right: IndexUnit): number {
+    const leftChildren = left.children ?? [];
+    const rightChildren = right.children ?? [];
+    if (leftChildren.length === 0 || rightChildren.length === 0) return 0;
+
+    let best = 0;
+    for (const lChild of leftChildren) {
+      for (const rChild of rightChildren) {
+        if (lChild.unitType !== rChild.unitType) continue;
+        const sim = this.similarityWithFallback(lChild, rChild);
+        if (sim > best) best = sim;
+      }
+    }
+    return best;
+  }
+
+  private hasVector(unit: IndexUnit): boolean {
+    return Array.isArray(unit.embedding) && unit.embedding.length > 0;
   }
 
   private findParentOfType(unit: IndexUnit, targetType: IndexUnitType): IndexUnit | null {

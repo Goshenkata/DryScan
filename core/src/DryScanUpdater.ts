@@ -166,6 +166,11 @@ export async function updateFileTracking(
 export async function addEmbedding(repoPath: string, fn: IndexUnit): Promise<IndexUnit> {
   try {
     const config = await configStore.get(repoPath);
+    const maxContext = config?.contextLength ?? 2048;
+    if (fn.code.length > maxContext) {
+      log("Skipping embedding for %s (code length %d exceeds context %d)", fn.id, fn.code.length, maxContext);
+      return { ...fn, embedding: null };
+    }
     const embeddings = new OllamaEmbeddings({
       model: config?.embeddingModel || "embeddinggemma",
       baseUrl: config?.embeddingBaseUrl || process.env.OLLAMA_API_URL || "http://localhost:11434",

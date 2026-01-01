@@ -56,5 +56,5 @@ export class IndexUnitEntity implements IndexUnit {
   callDependencies?: IndexUnitEntity[];
 
   @Column("simple-array", { nullable: true })
-  embedding?: number[];
+  embedding?: number[] | null;
 }

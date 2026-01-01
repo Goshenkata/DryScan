@@ -344,3 +344,42 @@ EOF
   remaining=$(sqlite_query "SELECT COUNT(*) FROM files;")
   [ "${remaining}" -lt "${initial_files}" ]
 }
+
+@test "context length skips embeddings for oversized units" {
+  cat > .dryconfig.json <<'JSON'
+{
+  "contextLength": 32
+}
+JSON
+
+  cat > src/main/java/com/example/demo/service/OversizedService.java <<'EOF'
+package com.example.demo.service;
+
+public class OversizedService {
+
+    public String giantMethod() {
+        // filler to push code length well beyond the configured context limit
+        String value = "";
+        value += "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        value += "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        value += "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        value += "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        value += "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        return value;
+    }
+
+    public String helper() {
+        return "ok";
+    }
+}
+EOF
+
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  oversized_is_null=$(sqlite_query "SELECT embedding IS NULL FROM index_units WHERE name='OversizedService.giantMethod' LIMIT 1;")
+  [ "${oversized_is_null}" -eq 1 ]
+
+  run_dryscan dupes --json "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+}

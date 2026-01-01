@@ -1,12 +1,13 @@
 ## Project Roadmap / TODOs
 
- - [ ] **Core Improvements**
+ - [ ] **ROAMAP**
 	- [x] [ADR-001: Multi-level duplication units (class, function, block)](.github/docs/adr-001-multilevel-duplication-units.md)
 	- [x] [ADR-002: AI triviality detection](.github/docs/adr-002-static-triviality-filtering.md)
     - [x] add dryscan config
 	- [x] Compute Duplication score
 	- [x] Refacor for maintainability
 	- [x] Write integration tests
+	- [x] Fix model context winow issue for large files
 
 - [ ] **VS Code Extension**
 	- [ ] Inline duplicate highlighting
@@ -22,7 +23,8 @@
 	- [ ] Failure thresholds (block PRs)
 	- [ ] Duplication score in CI reports
 
-- [ ] **Add-on Features**
+- [ ] **Nice to do**
+	- [ ] remove method call chain fluff
     - [ ] Use real static code analisys
 	- [ ] Cross-repo analysis 
 # DryScan

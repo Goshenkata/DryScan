@@ -51,6 +51,7 @@ export interface DryConfig {
   threshold: number;
   embeddingModel: string;
   embeddingBaseUrl?: string;
+  contextLength: number;
 }
 
 export interface IndexUnit {
@@ -65,7 +66,7 @@ export interface IndexUnit {
   parent?: IndexUnit | null;
   children?: IndexUnit[];
   callDependencies?: IndexUnit[];
-  embedding?: number[];
+  embedding?: number[] | null;
 }
 
 export interface EmbeddingResult {
