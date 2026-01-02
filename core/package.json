@@ -56,5 +56,8 @@
     "tree-sitter-python": "^0.25.0",
     "typeorm": "^0.3.28",
     "upath": "^2.0.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -9,13 +9,13 @@ import { DryScan } from "../src/DryScan.ts";
 import { DryScanDatabase } from "../src/db/DryScanDatabase.ts";
 import { detectFileChanges, performIncrementalUpdate } from "../src/DryScanUpdater.ts";
 import { IndexUnitExtractor } from "../src/IndexUnitExtractor.ts";
-import { DEFAULT_CONFIG } from "../src/config/dryconfig.ts";
 import { IndexUnitType } from "../src/types.ts";
 import { configStore } from "../src/config/configStore.ts";
+import { buildTestConfig } from "./helpers/testConfig.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const baseConfig = () => ({ ...DEFAULT_CONFIG, minLines: 0 });
+const baseConfig = () => buildTestConfig({ minLines: 0 });
 const writeConfig = async (repoPath, config) => {
   await fs.writeFile(path.join(repoPath, "dryconfig.json"), JSON.stringify(config, null, 2), "utf8");
 };

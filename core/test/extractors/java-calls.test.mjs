@@ -3,8 +3,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import { JavaExtractor } from "../../src/extractors/java.ts";
 import { IndexUnitType } from "../../src/types.ts";
-import { DEFAULT_CONFIG } from "../../src/config/dryconfig.ts";
 import { configStore } from "../../src/config/configStore.ts";
+import { buildTestConfig } from "../helpers/testConfig.mjs";
 
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 const repoRoot = resourcesDir;
@@ -16,7 +16,7 @@ describe('JavaExtractor - Comment stripping', () => {
     const configPath = path.join(repoRoot, 'dryconfig.json');
     await fs.writeFile(
       configPath,
-      JSON.stringify({ ...DEFAULT_CONFIG, minLines: 0, minBlockLines: 0 }, null, 2),
+      JSON.stringify(buildTestConfig({ minLines: 0, minBlockLines: 0 }), null, 2),
       'utf8'
     );
     await configStore.init(repoRoot);

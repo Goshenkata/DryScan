@@ -57,18 +57,17 @@ or provide an Ollama URL to use local embeddings;
 	- [ ] Inline duplicate highlighting
 	- [ ] Show duplication score in editor
 	- [ ] Model switch UI
-	- [ ] Refactoring suggestions
 	- [ ] Quick ignore/add to .dryignore
 
 - [ ] **CI/CD Tools**
 	- [ ] Dockerized CLI
-	- [ ] Cloud AI
+	- [X] Cloud AI
 	- [ ] GitHub Action
 	- [ ] Failure thresholds (block PRs)
 	- [ ] Duplication score in CI reports
 
-- [ ] **Nice to do**
-    - [ ] Use real static code analisys
+- [ ] **Nice to have**
+	- [ ] Refactoring suggestions - vscode
 	- [ ] Cross-repo analysis 
 
 ## License

@@ -2,15 +2,15 @@ import { expect } from "chai";
 import path from "path";
 import fs from "fs/promises";
 import { JavaExtractor } from "../../src/extractors/java.ts";
-import { DEFAULT_CONFIG } from "../../src/config/dryconfig.ts";
 import { configStore } from "../../src/config/configStore.ts";
 import { IndexUnitType } from "../../src/types.ts";
+import { buildTestConfig } from "../helpers/testConfig.mjs";
 
 const resourcesDir = path.join(process.cwd(), 'test', 'resources', 'extractors');
 const repoRoot = resourcesDir;
 
 async function writeConfig(overrides = {}) {
-  const next = { ...DEFAULT_CONFIG, ...overrides };
+  const next = buildTestConfig(overrides);
   await fs.writeFile(path.join(repoRoot, 'dryconfig.json'), JSON.stringify(next, null, 2), 'utf8');
 }
 

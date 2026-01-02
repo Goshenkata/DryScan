@@ -1,8 +1,8 @@
 import { expect } from "chai";
 import { DryScan } from "../src/DryScan.ts";
 import { IndexUnitType } from "../src/types.ts";
-import { DEFAULT_CONFIG } from "../src/config/dryconfig.ts";
 import { configStore } from "../src/config/configStore.ts";
+import { buildTestConfig } from "./helpers/testConfig.mjs";
 import upath from "upath";
 import fs from "fs/promises";
 import os from "os";
@@ -14,7 +14,7 @@ describe("DryScan - Duplicate Detection", function() {
 
   // Helper to create a DryScan instance with a stubbed DB
   async function writeConfig(dir, overrides = {}) {
-    const next = { ...DEFAULT_CONFIG, ...overrides };
+    const next = buildTestConfig(overrides);
     await fs.writeFile(upath.join(dir, "dryconfig.json"), JSON.stringify(next, null, 2), "utf8");
   }
 
