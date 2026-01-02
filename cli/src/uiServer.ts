@@ -4,8 +4,8 @@ import { resolve, join } from "path";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import Handlebars from "handlebars";
-import type { DuplicateGroup, DuplicationScore } from "@dryscan/core";
-import { DryScan, configStore } from "@dryscan/core";
+import type { DuplicateGroup, DuplicationScore } from "@goshenkata/dryscan-core";
+import { DryScan, configStore } from "@goshenkata/dryscan-core";
 import { applyExclusionFromLatestReport, writeDuplicateReport } from "./reports.js";
 
 export interface UiServerOptions {

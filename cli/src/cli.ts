@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import {
   DryScan,
   configStore,
-} from '@dryscan/core';
+} from '@goshenkata/dryscan-core';
 import { resolve } from 'path';
 import { handleDupesCommand } from './dupes.js';
 import { applyExclusionFromLatestReport } from './reports.js';

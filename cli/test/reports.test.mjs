@@ -2,7 +2,7 @@ import { expect } from "chai";
 import fs from "fs/promises";
 import os from "os";
 import { join } from "path";
-import { configStore } from "@dryscan/core";
+import { configStore } from "@goshenkata/dryscan-core";
 import {
   writeDuplicateReport,
   loadLatestReport,

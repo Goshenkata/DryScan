@@ -1,6 +1,6 @@
 import { resolve } from 'path';
-import type { DuplicateReport } from '@dryscan/core';
-import { DryScan, configStore } from '@dryscan/core';
+import type { DuplicateReport } from '@goshenkata/dryscan-core';
+import { DryScan, configStore } from '@goshenkata/dryscan-core';
 import { writeDuplicateReport } from './reports.js';
 import { DuplicateReportServer } from './uiServer.js';
 

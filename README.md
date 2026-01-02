@@ -37,8 +37,8 @@ DryScan is a TypeScript monorepo that provides semantic analysis of codebases to
 
 This monorepo contains two main packages:
 
-- **`@dryscan/core`** - Core library with analysis functions
-- **`@dryscan/cli`** - Command-line interface
+- **`@goshenkata/dryscan-core`** - Core library with analysis functions
+- **`@goshenkata/dryscan-cli`** - Command-line interface
 
 ## Installation
 
@@ -84,7 +84,7 @@ npx dryscan dupes ./src
 
 ## Core Library
 
-The `@dryscan/core` package exports the following async functions:
+The `@goshenkata/dryscan-core` package exports the following async functions:
 
 - `analyzeRepo(repoPath: string)` - Analyzes repository structure and code
 - `findDuplicates(repoPath: string)` - Detects code duplication patterns

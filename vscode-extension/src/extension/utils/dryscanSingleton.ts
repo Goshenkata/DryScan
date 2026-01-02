@@ -1,4 +1,4 @@
-import { DryScan } from "@dryscan/core";
+import { DryScan } from "@goshenkata/dryscan-core";
 
 export class DryScanSingleton {
   private static instance: DryScan | null = null;
