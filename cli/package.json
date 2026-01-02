@@ -26,7 +26,7 @@
   "author": "Goshenkata",
   "license": "MIT",
   "dependencies": {
-    "@goshenkata/dryscan-core": "file:../core",
+    "@goshenkata/dryscan-core": "^1.0.0",
     "commander": "^14.0.2",
     "handlebars": "^4.7.8"
   },
@@ -38,5 +38,8 @@
     "mocha": "^11.7.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

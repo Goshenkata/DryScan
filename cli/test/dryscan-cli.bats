@@ -14,6 +14,7 @@ setup() {
   rm -rf "${TEST_ROOT}"
   cp -a "${FIXTURE_SRC}" "${TEST_ROOT}"
   cd "${TEST_ROOT}"
+  write_base_config
 }
 
 teardown() {
@@ -40,6 +41,31 @@ wait_for_ui() {
     sleep 1
   done
   return 1
+}
+
+embedding_source() {
+  if [[ -n "${GOOGLE_API_KEY:-}" ]]; then
+    echo "google"
+  else
+    echo "http://localhost:11434"
+  fi
+}
+
+embedding_model() {
+  if [[ -n "${GOOGLE_API_KEY:-}" ]]; then
+    echo "gemini-embedding-001"
+  else
+    echo "embeddinggemma"
+  fi
+}
+
+write_base_config() {
+  cat > dryconfig.json <<EOF
+{
+  "embeddingModel": "$(embedding_model)",
+  "embeddingSource": "$(embedding_source)"
+}
+EOF
 }
 
 @test "init builds index with tracked files" {
@@ -202,17 +228,17 @@ EOF
   [ "${status}" -eq 0 ]
   units_before=$(sqlite_query "SELECT COUNT(*) FROM index_units;")
 
-  cat > dryconfig.json <<'JSON'
+  cat > dryconfig.json <<EOF
 {
   "excludedPaths": ["**/model/**"],
   "excludedPairs": ["FUNCTION|getUserById(arity:1)|getUserById(arity:1)"],
   "minLines": 10,
   "minBlockLines": 6,
   "threshold": 0.99,
-  "embeddingModel": "embeddinggemma",
-  "embeddingSource": "http://localhost:11434"
+  "embeddingModel": "$(embedding_model)",
+  "embeddingSource": "$(embedding_source)"
 }
-JSON
+EOF
 
   run_dryscan dupes --json "${TEST_ROOT}"
   [ "${status}" -eq 0 ]
@@ -232,17 +258,17 @@ JSON
   run_dryscan init "${TEST_ROOT}"
   [ "${status}" -eq 0 ]
 
-  cat > dryconfig.json <<'JSON'
+  cat > dryconfig.json <<EOF
 {
   "excludedPaths": [],
   "excludedPairs": ["FUNCTION|getUserById(arity:1)|getUserById(arity:1)"],
   "minLines": 3,
   "minBlockLines": 5,
   "threshold": 0.85,
-  "embeddingModel": "embeddinggemma",
-  "embeddingSource": "http://localhost:11434"
+  "embeddingModel": "$(embedding_model)",
+  "embeddingSource": "$(embedding_source)"
 }
-JSON
+EOF
 
   run_dryscan dupes --json "${TEST_ROOT}"
   [ "${status}" -eq 0 ]
@@ -347,11 +373,13 @@ EOF
 }
 
 @test "context length skips embeddings for oversized units" {
-  cat > dryconfig.json <<'JSON'
+  cat > dryconfig.json <<EOF
 {
-  "contextLength": 32
+  "contextLength": 32,
+  "embeddingModel": "$(embedding_model)",
+  "embeddingSource": "$(embedding_source)"
 }
-JSON
+EOF
 
   cat > src/main/java/com/example/demo/service/OversizedService.java <<'EOF'
 package com.example.demo.service;
@@ -386,12 +414,14 @@ EOF
 }
 
 @test "skips dto-only classes and members" {
-  cat > dryconfig.json <<'JSON'
+  cat > dryconfig.json <<EOF
 {
   "minLines": 0,
-  "minBlockLines": 0
+  "minBlockLines": 0,
+  "embeddingModel": "$(embedding_model)",
+  "embeddingSource": "$(embedding_source)"
 }
-JSON
+EOF
 
   mkdir -p src/main/java/com/example/demo/model
   cat > src/main/java/com/example/demo/model/CustomerDto.java <<'EOF'
