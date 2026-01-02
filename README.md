@@ -8,8 +8,7 @@
 	- [x] Refacor for maintainability
 	- [x] Write integration tests
 	- [x] Fix model context winow issue for large files
-	- [ ] Caching of comparisons
-	- [x] remove method call chain fluff
+	- [x] Caching of comparisons
 	- [x] remove of nesting blocks from comparison
 
 - [ ] **VS Code Extension**

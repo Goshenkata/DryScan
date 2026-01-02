@@ -1,0 +1,27 @@
+# Test files
+test/
+*.test.mjs
+*.test.ts
+*.test.js
+*.bats
+
+# Development files
+tsconfig.json
+.gitignore
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Source TypeScript files (ship compiled dist only)
+src/
+
+# Temporary and build artifacts
+*.log
+npm-debug.log*
+.npm/
+node_modules/

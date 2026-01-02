@@ -1,0 +1,29 @@
+# Test files and coverage
+test/
+coverage/
+*.test.mjs
+*.test.ts
+*.test.js
+
+# Development files
+.mocharc.json
+tsconfig.json
+.gitignore
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Source files (publish compiled dist only if applicable)
+# Uncomment if you want to exclude source and only ship compiled JS
+# src/
+
+# Temporary and build artifacts
+*.log
+npm-debug.log*
+.npm/
+node_modules/
