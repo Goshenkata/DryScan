@@ -16,7 +16,7 @@
     "coverage": "c8 tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\""
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "keywords": [
     "cli",

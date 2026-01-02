@@ -4,11 +4,12 @@
   "description": "A Semantic Code Duplication & Reuse Analyzer",
   "type": "module",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "workspaces": [
     "core",
-    "cli"
+    "cli",
+    "vscode-extension"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
