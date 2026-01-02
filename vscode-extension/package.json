@@ -20,23 +20,38 @@
         "command": "dryscan.init",
         "title": "Initialise DryScan",
         "category": "DryScan"
+      },
+      {
+        "command": "dryscan.refreshView",
+        "title": "⟳",
+        "category": "DryScan"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "dryscan",
+          "id": "dryscanContainer",
           "title": "DryScan",
           "icon": "src/media/logo.svg"
         }
       ]
     },
     "views": {
-      "dryscan": [
+      "dryscanContainer": [
         {
-          "id": "dryscan.explorer",
+          "id": "dryscanView",
           "name": "DryScan",
           "icon": "src/media/logo.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "dryscan.refreshView",
+          "when": "view == dryscanView",
+          "group": "navigation",
+          "icon": "$(refresh)"
         }
       ]
     }
