@@ -18,7 +18,7 @@ describe('JavaExtractor - Call Extraction', () => {
     file = path.join(resourcesDir, 'CallerSample.java');
     source = await fs.readFile(file, 'utf8');
     const configPath = path.join(repoRoot, 'dryconfig.json');
-    await fs.writeFile(configPath, JSON.stringify({ ...DEFAULT_CONFIG, minLines: 0 }, null, 2), 'utf8');
+    await fs.writeFile(configPath, JSON.stringify({ ...DEFAULT_CONFIG, minLines: 0, minBlockLines: 0 }, null, 2), 'utf8');
     await configStore.init(repoRoot);
     extractor = new JavaExtractor(repoRoot);
   });
@@ -60,5 +60,36 @@ describe('JavaExtractor - Call Extraction', () => {
   it('returns empty array for non-existent file', () => {
     const calls = extractor.extractCallsFromUnit('nonexistent.java', 'id');
     expect(calls).to.be.an('array').that.is.empty;
+  });
+
+  it('strips comments from class, function, and block code', async () => {
+    const filePath = path.join(resourcesDir, 'CommentSample.java');
+    const commentedSource = `
+      public class CommentSample {
+        // class comment
+        /* block comment */
+        public int foo() {
+          // line comment inside method
+          int x = 1; /* inline block */
+          int y = 2;
+          return x + y; // trailing comment
+        }
+      }
+    `;
+
+    const units = await extractor.extractFromText(filePath, commentedSource);
+
+    const classUnit = units.find(u => u.unitType === IndexUnitType.CLASS && u.name === 'CommentSample');
+    const fnUnit = units.find(u => u.unitType === IndexUnitType.FUNCTION && u.name === 'CommentSample.foo');
+    const blockUnit = units.find(u => u.unitType === IndexUnitType.BLOCK && u.parentId === fnUnit?.id);
+
+    expect(classUnit).to.exist;
+    expect(fnUnit).to.exist;
+    expect(blockUnit).to.exist;
+
+    [classUnit, fnUnit, blockUnit].forEach(unit => {
+      expect(unit.code).to.not.include('//');
+      expect(unit.code).to.not.include('/*');
+    });
   });
 });

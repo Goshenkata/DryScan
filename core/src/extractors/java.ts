@@ -54,7 +54,7 @@ export class JavaExtractor implements LanguageExtractor {
         const classLength = endLine - startLine;
         const skipClass = this.shouldSkip(IndexUnitType.CLASS, className, classLength);
         const classId = this.buildId(IndexUnitType.CLASS, className, startLine, endLine);
-        const code = this.stripClassBody(node, source);
+        const code = this.stripComments(this.stripClassBody(node, source));
         const classUnit: IndexUnit = {
           id: classId,
           name: className,
@@ -280,7 +280,7 @@ export class JavaExtractor implements LanguageExtractor {
       filePath: file,
       startLine,
       endLine,
-      code: source.slice(node.startIndex, node.endIndex),
+      code: this.stripComments(source.slice(node.startIndex, node.endIndex)),
       unitType: IndexUnitType.FUNCTION,
       parentId: parentClass?.id,
       parent: parentClass,
@@ -316,7 +316,7 @@ export class JavaExtractor implements LanguageExtractor {
             filePath: file,
             startLine,
             endLine,
-            code: source.slice(n.startIndex, n.endIndex),
+            code: this.stripComments(source.slice(n.startIndex, n.endIndex)),
             unitType: IndexUnitType.BLOCK,
             parentId: parentFunction.id,
             parent: parentFunction,
@@ -374,5 +374,10 @@ export class JavaExtractor implements LanguageExtractor {
     const withoutBlockComments = code.replace(/\/\*[\s\S]*?\*\//g, "");
     const withoutLineComments = withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
     return withoutLineComments.replace(/\s+/g, "");
+  }
+
+  private stripComments(code: string): string {
+    const withoutBlockComments = code.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n\r]/g, ""));
+    return withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
   }
 }
