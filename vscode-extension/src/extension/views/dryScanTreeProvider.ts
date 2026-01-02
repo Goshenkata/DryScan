@@ -85,12 +85,16 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
   }
 
   handlePairClick(group: DuplicateGroup | undefined): void {
-    if (!group) return;
+    if (!group) {
+      return;
+    }
     this.dependencies.showInfo("Hello world");
   }
 
   async handleExcludePair(group: DuplicateGroup | undefined): Promise<void> {
-    if (!group) return;
+    if (!group) {
+      return;
+    }
 
     const repoPath = this.currentRepoPath ?? this.dependencies.getWorkspacePath();
     if (!repoPath) {
@@ -238,7 +242,9 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
   }
 
   private removePairFromReport(pairId: string): void {
-    if (!this.cachedReport) return;
+    if (!this.cachedReport) {
+      return;
+    }
 
     const remaining = this.cachedReport.duplicates.filter((group) => group.id !== pairId);
     const updatedScore = {

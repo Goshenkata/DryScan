@@ -149,19 +149,32 @@ export class DuplicateService {
     }
 
     if (left.unitType === IndexUnitType.FUNCTION) {
-      const parentClassSimilarity = this.parentSimilarity(left, right, IndexUnitType.CLASS);
       const weights = indexConfig.weights.function;
-      return (weights.self * selfSimilarity) + (weights.parentClass * parentClassSimilarity);
+      const hasParentClass = !!this.findParentOfType(left, IndexUnitType.CLASS) && !!this.findParentOfType(right, IndexUnitType.CLASS);
+      const parentClassSimilarity = hasParentClass ? this.parentSimilarity(left, right, IndexUnitType.CLASS) : 0;
+
+      // Re-normalize weights when parent context is missing, so standalone units aren't penalized.
+      const totalWeight = weights.self + (hasParentClass ? weights.parentClass : 0);
+      return ((weights.self * selfSimilarity) + (hasParentClass ? (weights.parentClass * parentClassSimilarity) : 0)) / totalWeight;
     }
 
     const weights = indexConfig.weights.block;
-    const parentFuncSim = this.parentSimilarity(left, right, IndexUnitType.FUNCTION);
-    const parentClassSim = this.parentSimilarity(left, right, IndexUnitType.CLASS);
+    const hasParentFunction = !!this.findParentOfType(left, IndexUnitType.FUNCTION) && !!this.findParentOfType(right, IndexUnitType.FUNCTION);
+    const hasParentClass = !!this.findParentOfType(left, IndexUnitType.CLASS) && !!this.findParentOfType(right, IndexUnitType.CLASS);
+    const parentFuncSim = hasParentFunction ? this.parentSimilarity(left, right, IndexUnitType.FUNCTION) : 0;
+    const parentClassSim = hasParentClass ? this.parentSimilarity(left, right, IndexUnitType.CLASS) : 0;
+
+    // Re-normalize weights when some parent context is missing.
+    const totalWeight =
+      weights.self +
+      (hasParentFunction ? weights.parentFunction : 0) +
+      (hasParentClass ? weights.parentClass : 0);
+
     return (
-      weights.self * selfSimilarity +
-      weights.parentFunction * parentFuncSim +
-      weights.parentClass * parentClassSim
-    );
+      (weights.self * selfSimilarity) +
+      (hasParentFunction ? (weights.parentFunction * parentFuncSim) : 0) +
+      (hasParentClass ? (weights.parentClass * parentClassSim) : 0)
+    ) / totalWeight;
   }
 
   private parentSimilarity(left: IndexUnit, right: IndexUnit, targetType: IndexUnitType): number {

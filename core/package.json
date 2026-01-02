@@ -35,7 +35,6 @@
     "access": "public"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/debug": "^4.1.12",
     "@types/node": "^25.0.3",
     "chai": "^6.2.2",
@@ -49,7 +48,6 @@
     "@langchain/core": "^1.1.8",
     "@langchain/google-genai": "^2.1.3",
     "@langchain/ollama": "^1.1.0",
-    "better-sqlite3": "^12.5.0",
     "debug": "^4.4.3",
     "glob-gitignore": "^1.0.15",
     "ignore": "^7.0.5",
@@ -58,6 +56,7 @@
     "minimatch": "^10.1.1",
     "reflect-metadata": "^0.2.2",
     "short-uuid": "^6.0.3",
+    "sqlite3": "^5.1.7",
     "tree-sitter": "^0.25.0",
     "tree-sitter-java": "^0.23.5",
     "tree-sitter-python": "^0.25.0",

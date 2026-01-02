@@ -19,7 +19,7 @@ export class DryScanDatabase {
     await fs.mkdir(upath.dirname(dbPath), { recursive: true });
 
     this.dataSource = new DataSource({
-      type: "better-sqlite3",
+      type: "sqlite",
       database: dbPath,
       entities: [IndexUnitEntity, FileEntity],
       synchronize: true,
