@@ -3,34 +3,61 @@
   "displayName": "DryScan",
   "description": "A Semantic Code Duplication Detector",
   "version": "0.0.1",
+  "type": "module",
   "engines": {
     "vscode": "^1.107.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "*"
+  ],
   "contributes": {
     "commands": [
       {
-        "command": "dryscan.helloWorld",
-        "title": "Hello World"
+        "command": "dryscan.init",
+        "title": "Initialise DryScan",
+        "category": "DryScan"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dryscan",
+          "title": "DryScan",
+          "icon": "src/media/logo.svg"
+        }
+      ]
+    },
+    "views": {
+      "dryscan": [
+        {
+          "id": "dryscan.explorer",
+          "name": "DryScan",
+          "icon": "src/media/logo.svg"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
+    "build": "npm run compile",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "mocha \"out/test/**/*.js\""
+  },
+  "dependencies": {
+    "@dryscan/core": "workspace:*"
   },
   "devDependencies": {
     "@types/vscode": "^1.107.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
+    "mocha": "^10.8.2",
     "typescript-eslint": "^8.48.1",
     "eslint": "^9.39.1",
     "typescript": "^5.9.3",
