@@ -12,8 +12,7 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "*",
-    "onView:dryscan.explorer"
+    "*"
   ],
   "contributes": {
     "commands": [

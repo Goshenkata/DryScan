@@ -1,35 +1,22 @@
-export interface InitCommandDeps {
-  repoPath: string | null;
-  checkDryFolder: (repoPath: string) => Promise<boolean>;
-  initDryScan: (repoPath: string) => Promise<void>;
-  refreshView: () => void;
-  withProgress: <T>(message: string, task: () => Promise<T>) => Promise<T>;
-  showInfo: (message: string) => void;
-  showError: (message: string) => void;
-}
+import * as vscode from "vscode";
+import { DryScanSingleton } from "../utils/dryscanSingleton.js";
+import { dryFolderExists } from "../utils/dryFolder.js";
+import { vscodeProgressWrapper } from "../utils/progress.js";
 
-export async function handleInitCommand(deps: InitCommandDeps): Promise<void> {
-  const { repoPath } = deps;
-  if (!repoPath) {
-    deps.showError("Open a workspace folder to initialize DryScan.");
-    return;
-  }
-
-  if (await deps.checkDryFolder(repoPath)) {
-    deps.showInfo("DryScan is already initialized.");
-    deps.refreshView();
+export async function handleInitCommand(repoPath: string): Promise<void> {
+  if (await dryFolderExists(repoPath)) {
+    vscode.window.showInformationMessage("DryScan is already initialized.");
     return;
   }
 
   try {
-    await deps.withProgress("Initialising DryScan...", async () => {
-      await deps.initDryScan(repoPath);
+    await vscodeProgressWrapper("Initialising DryScan...", async () => {
+      const instance = await DryScanSingleton.get(repoPath);
+      await (instance as any).init();
     });
-    deps.showInfo("DryScan initialised successfully.");
+    vscode.window.showInformationMessage("DryScan initialised successfully.");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    deps.showError(`Failed to initialise DryScan: ${message}`);
-  } finally {
-    deps.refreshView();
+    vscode.window.showErrorMessage(`Failed to initialise DryScan: ${message}`);
   }
 }
