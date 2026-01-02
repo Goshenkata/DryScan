@@ -9,7 +9,26 @@
         "build"
       ],
       "problemMatcher": []
-    }
+    },
+    {
+      "label": "extension-watch",
+      "type": "npm",
+      "script": "watch",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "never"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "options": {
+        "env": {
+          "PATH": "/home/goshenkata/.nvm/versions/node/v22.17.1/bin:${env:PATH}"
+        }
+      }
+    },
     {
       "label": "dryscan-clean",
       "type": "shell",

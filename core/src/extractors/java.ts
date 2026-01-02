@@ -54,7 +54,7 @@ export class JavaExtractor implements LanguageExtractor {
         const classLength = endLine - startLine;
         const skipClass = this.shouldSkip(IndexUnitType.CLASS, className, classLength);
         const classId = this.buildId(IndexUnitType.CLASS, className, startLine, endLine);
-        const code = this.stripAnnotations(this.stripClassBody(node, source));
+        const code = this.stripClassBody(node, source);
         const classUnit: IndexUnit = {
           id: classId,
           name: className,
@@ -264,10 +264,6 @@ export class JavaExtractor implements LanguageExtractor {
     return nameNode ? source.slice(nameNode.startIndex, nameNode.endIndex) : "<anonymous>";
   }
 
-  private stripAnnotations(code: string): string {
-    return code.replace(/@[\w.]+(?:\s*\([^)]*\))?/g, "");
-  }
-
   private buildFunctionUnit(
     node: Parser.SyntaxNode,
     source: string,
@@ -278,13 +274,13 @@ export class JavaExtractor implements LanguageExtractor {
     const startLine = node.startPosition.row;
     const endLine = node.endPosition.row;
     const id = this.buildId(IndexUnitType.FUNCTION, name, startLine, endLine);
-      const unit: IndexUnit = {
+    const unit: IndexUnit = {
       id,
       name,
       filePath: file,
       startLine,
       endLine,
-        code: this.stripAnnotations(source.slice(node.startIndex, node.endIndex)),
+      code: source.slice(node.startIndex, node.endIndex),
       unitType: IndexUnitType.FUNCTION,
       parentId: parentClass?.id,
       parent: parentClass,
@@ -320,7 +316,7 @@ export class JavaExtractor implements LanguageExtractor {
             filePath: file,
             startLine,
             endLine,
-            code: this.stripAnnotations(source.slice(n.startIndex, n.endIndex)),
+            code: source.slice(n.startIndex, n.endIndex),
             unitType: IndexUnitType.BLOCK,
             parentId: parentFunction.id,
             parent: parentFunction,
