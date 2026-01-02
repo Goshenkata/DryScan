@@ -3,9 +3,9 @@ import { describe, it, afterEach } from "mocha";
 import { mkdtemp, mkdir } from "fs/promises";
 import path from "path";
 import { tmpdir } from "os";
-import { handleInitCommand, InitCommandDeps } from "../extension/commands/initCommand.js";
-import { DryScanSingleton } from "../extension/utils/dryscanSingleton.js";
-import { dryFolderExists } from "../extension/utils/dryFolder.js";
+import { handleInitCommand, InitCommandDeps } from "../extension/commands/initCommand";
+import { DryScanSingleton } from "../extension/utils/dryscanSingleton";
+import { dryFolderExists } from "../extension/utils/dryFolder";
 
 function createDeps(overrides: Partial<InitCommandDeps> = {}): { deps: InitCommandDeps; calls: Record<string, number> } {
 	const calls: Record<string, number> = {};

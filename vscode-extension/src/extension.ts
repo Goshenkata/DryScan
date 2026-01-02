@@ -1,34 +1,34 @@
 import * as vscode from "vscode";
-import { DryScanSingleton } from "./extension/utils/dryscanSingleton.js";
-import { DryScanInitTreeProvider } from "./extension/views/dryscanInitTreeProvider.js";
-import { dryFolderExists } from "./extension/utils/dryFolder.js";
-import { getPrimaryWorkspacePath } from "./extension/utils/workspaceContext.js";
-import { handleInitCommand } from "./extension/commands/initCommand.js";
-import { vscodeProgressWrapper } from "./extension/utils/progress.js";
+import { DryScanSingleton } from "./extension/utils/dryscanSingleton";
+import { dryFolderExists } from "./extension/utils/dryFolder";
+import { getPrimaryWorkspacePath } from "./extension/utils/workspaceContext";
+import { handleInitCommand } from "./extension/commands/initCommand";
+import { vscodeProgressWrapper } from "./extension/utils/progress";
+import { DryScanWebviewProvider } from "./extension/views/dryscanWebviewProvider";
 
 export function activate(context: vscode.ExtensionContext): void {
-	const initTreeProvider = new DryScanInitTreeProvider();
+	const initWebviewProvider = new DryScanWebviewProvider(context);
 
 	context.subscriptions.push(
-		initTreeProvider,
-		vscode.window.registerTreeDataProvider("dryscan.explorer", initTreeProvider),
-		registerInitCommand(initTreeProvider)
+		initWebviewProvider,
+		vscode.window.registerWebviewViewProvider("dryscan.explorer", initWebviewProvider),
+		registerInitCommand(initWebviewProvider)
 	);
 }
 
 export function deactivate(): void {}
 
-function registerInitCommand(treeProvider: DryScanInitTreeProvider): vscode.Disposable {
+function registerInitCommand(refresher: { refresh: () => void }): vscode.Disposable {
 	return vscode.commands.registerCommand("dryscan.init", async () => {
 		const repoPath = getPrimaryWorkspacePath();
 		await handleInitCommand({
 			repoPath,
 			checkDryFolder: dryFolderExists,
 			initDryScan: async (path: string) => {
-				const instance = DryScanSingleton.get(path);
-				await instance.init();
+				const instance = await DryScanSingleton.get(path);
+				await (instance as any).init();
 			},
-			refreshView: () => treeProvider.refresh(),
+			refreshView: () => refresher.refresh(),
 			withProgress: <T>(message: string, task: () => Promise<T>) =>
 				vscodeProgressWrapper(message, task),
 			showInfo: (message: string) => vscode.window.showInformationMessage(message),

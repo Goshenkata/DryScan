@@ -14,6 +14,7 @@
       "label": "extension-watch",
       "type": "npm",
       "script": "watch",
+      "path": "vscode-extension",
       "problemMatcher": "$tsc-watch",
       "isBackground": true,
       "presentation": {
