@@ -1,6 +1,6 @@
 {
   "name": "@goshenkata/dryscan-core",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Core library for DryScan - semantic code duplication analyzer",
   "type": "module",
   "main": "./dist/index.js",
@@ -63,8 +63,5 @@
     "tree-sitter-python": "^0.25.0",
     "typeorm": "^0.3.28",
     "upath": "^2.0.1"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }
