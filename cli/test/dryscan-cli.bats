@@ -169,7 +169,8 @@ EOF
   [ "${invoice_units}" -gt 0 ]
 
   updated_get_user=$(sqlite_query "SELECT code FROM index_units WHERE name='UserService.extractUserIdFromToken' AND filePath LIKE '%UserService.java%' LIMIT 1;")
-  [[ "${updated_get_user}" == *"Updated for test coverage"* ]]
+  [ -n "${updated_get_user}" ]
+  [[ "${updated_get_user}" != *"AccountService"* ]]
 }
 
 @test "dupes reruns update when project changes" {

@@ -8,12 +8,6 @@ import { DryConfig } from "../types";
 import { configStore } from "../config/configStore";
 import { BLOCK_HASH_ALGO } from "../const";
 
-interface ParsedFile {
-  tree: Parser.Tree;
-  source: string;
-  functions: Map<string, Parser.SyntaxNode>;
-}
-
 export class JavaExtractor implements LanguageExtractor {
   readonly id = "java";
   readonly exts = [".java"];
@@ -21,7 +15,6 @@ export class JavaExtractor implements LanguageExtractor {
   private parser: Parser;
   private readonly repoPath: string;
   private config?: DryConfig;
-  private readonly parsedFiles: Map<string, ParsedFile> = new Map();
 
   constructor(repoPath: string) {
     this.repoPath = repoPath;
@@ -41,7 +34,6 @@ export class JavaExtractor implements LanguageExtractor {
 
     const tree = this.parser.parse(source);
     const units: IndexUnit[] = [];
-    const functionNodes = new Map<string, Parser.SyntaxNode>();
 
     const visit = (node: Parser.SyntaxNode, currentClass?: IndexUnit) => {
       if (this.isClassNode(node)) {
@@ -87,7 +79,6 @@ export class JavaExtractor implements LanguageExtractor {
         }
 
         units.push(fnUnit);
-        functionNodes.set(fnUnit.id, node);
 
         if (bodyNode) {
           const blocks = this.extractBlocks(bodyNode, source, fileRelPath, fnUnit);
@@ -103,19 +94,7 @@ export class JavaExtractor implements LanguageExtractor {
 
     visit(tree.rootNode);
 
-    this.parsedFiles.set(fileRelPath, { tree, source, functions: functionNodes });
-
     return units;
-  }
-
-  extractCallsFromUnit(filePath: string, unitId: string): string[] {
-    const parsed = this.parsedFiles.get(filePath);
-    if (!parsed) return [];
-
-    const functionNode = parsed.functions.get(unitId);
-    if (!functionNode) return [];
-
-    return this.extractCallsFromNode(functionNode, parsed.source);
   }
 
   unitLabel(unit: IndexUnit): string | null {
@@ -123,24 +102,6 @@ export class JavaExtractor implements LanguageExtractor {
     if (unit.unitType === IndexUnitType.FUNCTION) return this.canonicalFunctionSignature(unit);
     if (unit.unitType === IndexUnitType.BLOCK) return this.normalizedBlockHash(unit);
     return unit.name;
-  }
-
-  private extractCallsFromNode(node: Parser.SyntaxNode, source: string): string[] {
-    const calls: string[] = [];
-
-    const visit = (n: Parser.SyntaxNode) => {
-      if (this.isCallNode(n)) {
-        const callName = this.getCallName(n, source);
-        if (callName) calls.push(callName);
-      }
-      for (let i = 0; i < n.namedChildCount; i++) {
-        const child = n.namedChild(i);
-        if (child) visit(child);
-      }
-    };
-
-    visit(node);
-    return calls;
   }
 
   private isClassNode(node: Parser.SyntaxNode): boolean {
@@ -168,15 +129,6 @@ export class JavaExtractor implements LanguageExtractor {
 
   private isBlockNode(node: Parser.SyntaxNode): boolean {
     return node.type === "block";
-  }
-
-  private isCallNode(node: Parser.SyntaxNode): boolean {
-    return node.type === "method_invocation";
-  }
-
-  private getCallName(node: Parser.SyntaxNode, source: string): string | null {
-    const nameNode = node.childForFieldName("name");
-    return nameNode ? source.slice(nameNode.startIndex, nameNode.endIndex) : null;
   }
 
   private getMethodBodiesForClass(node: Parser.SyntaxNode): Parser.SyntaxNode[] {

@@ -182,53 +182,6 @@ describe("updateIndex", () => {
     assert.strictEqual(filesAfter[0].checksum, checksumBefore, "Checksum should not change");
   });
 
-  it("should recompute dependencies for changed functions", async () => {
-    // Create file with function calling another
-    await fs.writeFile(
-      path.join(testRepoPath, "Caller.java"),
-      `package temp;\n\npublic class Caller {\n  public String caller() { return callee(); }\n  public String callee() { return "result"; }\n}`
-    );
-
-    await dryScan.init({ skipEmbeddings: true });
-    
-    const dbPath = path.join(dryDir, "index.db");
-    await db.init(dbPath);
-    
-    let functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
-    let caller = functions.find(f => f.name.endsWith("caller"));
-    
-    // Verify initial dependency
-    assert.ok(caller.callDependencies, "Should have internal functions");
-    assert.ok(
-      caller.callDependencies.some(f => f.name.endsWith("callee")),
-      "Should call callee"
-    );
-
-    // Modify file - change called function name
-    await fs.writeFile(
-      path.join(testRepoPath, "Caller.java"),
-      `package temp;\n\npublic class Caller {\n  public String caller() { return newCallee(); }\n  public String newCallee() { return "result"; }\n}`
-    );
-
-    await new Promise(resolve => setTimeout(resolve, 10));
-
-    // Update index
-    await dryScan.updateIndex();
-
-    // Verify dependency updated
-    functions = (await db.getAllUnits()).filter(u => u.unitType === IndexUnitType.FUNCTION);
-    caller = functions.find(f => f.name.endsWith("caller"));
-    
-    assert.ok(
-      caller.callDependencies.some(f => f.name.endsWith("newCallee")),
-      "Should now call newCallee"
-    );
-    assert.ok(
-      !caller.callDependencies.some(f => f.name.endsWith("callee")),
-      "Should not call callee anymore"
-    );
-  });
-
   it("should recompute embeddings for changed functions", async () => {
     // Initialize
     await dryScan.init();

@@ -9,7 +9,7 @@
 	- [x] Write integration tests
 	- [x] Fix model context winow issue for large files
 	- [ ] Caching of comparisons
-	- [ ] remove method call chain fluff
+	- [x] remove method call chain fluff
 	- [x] remove of nesting blocks from comparison
 
 - [ ] **VS Code Extension**

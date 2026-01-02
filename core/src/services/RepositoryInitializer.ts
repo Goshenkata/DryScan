@@ -20,13 +20,11 @@ export class RepositoryInitializer {
   async init(options?: InitOptions): Promise<void> {
     const extractor = this.deps.extractor;
 
-    console.log("[DryScan] Phase 1/4: Extracting code units...");
+    console.log("[DryScan] Phase 1/3: Extracting code units...");
     await this.initUnits(extractor);
-    console.log("[DryScan] Phase 2/4: Resolving internal dependencies...");
-    await this.applyDependencies(extractor);
-    console.log("[DryScan] Phase 3/4: Computing embeddings (may be slow)...");
+    console.log("[DryScan] Phase 2/3: Computing embeddings (may be slow)...");
     await this.computeEmbeddings(options?.skipEmbeddings === true);
-    console.log("[DryScan] Phase 4/4: Tracking files...");
+    console.log("[DryScan] Phase 3/3: Tracking files...");
     await this.trackFiles(extractor);
     await this.exclusionService.cleanupExcludedFiles();
     console.log("[DryScan] Initialization phases complete.");
@@ -36,12 +34,6 @@ export class RepositoryInitializer {
     const units = await extractor.scan(this.deps.repoPath);
     console.log(`[DryScan] Extracted ${units.length} index units.`);
     await this.deps.db.saveUnits(units);
-  }
-
-  private async applyDependencies(extractor: IndexUnitExtractor): Promise<void> {
-    const allUnits = await this.deps.db.getAllUnits();
-    const updated = await extractor.applyInternalDependencies(allUnits, allUnits);
-    await this.deps.db.updateUnits(updated);
   }
 
   private async computeEmbeddings(skipEmbeddings: boolean): Promise<void> {

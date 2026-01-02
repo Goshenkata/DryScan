@@ -29,12 +29,6 @@ describe('JavaExtractor', () => {
       const results = await extractor.extractFromText('Empty.java', '');
       expect(results).to.be.an('array').that.is.empty;
     });
-
-    it('returns empty array if extractCallsFromUnit is called before extractFromText', () => {
-      const extractor = new JavaExtractor(repoRoot);
-      const calls = extractor.extractCallsFromUnit('SomeFile.java', 'id');
-      expect(calls).to.be.an('array').that.is.empty;
-    });
   });
   it('supports only .java', async () => {
     await configStore.init(repoRoot);

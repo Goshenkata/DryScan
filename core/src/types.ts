@@ -66,7 +66,6 @@ export interface IndexUnit {
   parentId?: string | null;
   parent?: IndexUnit | null;
   children?: IndexUnit[];
-  callDependencies?: IndexUnit[];
   embedding?: number[] | null;
 }
 

@@ -226,27 +226,15 @@ export async function performIncrementalUpdate(
       await db.saveUnits(newUnits);
       log(`Extracted and saved ${newUnits.length} units from ${filesToProcess.length} files`);
 
-    // Step 4: Recompute dependencies for affected functions only
-      const allUnits = await db.getAllUnits();
-      const affectedUnits = allUnits.filter(fn => 
-      filesToProcess.includes(fn.filePath)
-    );
-    const updatedWithDeps = await extractor.applyInternalDependencies(
-      affectedUnits, 
-      allUnits
-    );
-      await db.updateUnits(updatedWithDeps);
-      log(`Recomputed dependencies for ${affectedUnits.length} units`);
-
-    // Step 5: Recompute embeddings for affected units only
-    const total = updatedWithDeps.length;
+    // Step 4: Recompute embeddings for affected units only
+    const total = newUnits.length;
     if (total > 0) {
       log(`Recomputing embeddings for ${total} units`);
       const progressInterval = Math.max(1, Math.ceil(total / 10));
       const updatedWithEmbeddings = [] as IndexUnit[];
 
       for (let i = 0; i < total; i++) {
-        const unit = updatedWithDeps[i];
+        const unit = newUnits[i];
         try {
           const enriched = await addEmbedding(repoPath, unit);
           updatedWithEmbeddings.push(enriched);
@@ -269,7 +257,7 @@ export async function performIncrementalUpdate(
     }
   }
 
-  // Step 6: Update file tracking
+  // Step 5: Update file tracking
   await updateFileTracking(changeSet, repoPath, extractor, db);
   log("Incremental update complete");
 

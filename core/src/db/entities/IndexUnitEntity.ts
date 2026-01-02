@@ -2,8 +2,6 @@ import {
   Column,
   Entity,
   JoinColumn,
-  JoinTable,
-  ManyToMany,
   ManyToOne,
   OneToMany,
   PrimaryColumn,
@@ -46,14 +44,6 @@ export class IndexUnitEntity implements IndexUnit {
 
   @OneToMany(() => IndexUnitEntity, (unit) => unit.parent, { nullable: true })
   children?: IndexUnitEntity[];
-
-  @ManyToMany(() => IndexUnitEntity, { nullable: true, cascade: false })
-  @JoinTable({
-    name: "index_unit_dependencies",
-    joinColumn: { name: "unit_id", referencedColumnName: "id" },
-    inverseJoinColumn: { name: "depends_on_unit_id", referencedColumnName: "id" },
-  })
-  callDependencies?: IndexUnitEntity[];
 
   @Column("simple-array", { nullable: true })
   embedding?: number[] | null;

@@ -5,7 +5,7 @@ import upath from "upath";
 import crypto from "node:crypto";
 import debug from "debug";
 import { glob } from "glob-gitignore";
-import { IndexUnit, IndexUnitType } from "./types";
+import { IndexUnit } from "./types";
 import { LanguageExtractor } from "./extractors/LanguageExtractor";
 import { JavaExtractor } from "./extractors/java";
 import { FILE_CHECKSUM_ALGO } from "./const";
@@ -94,113 +94,6 @@ export class IndexUnitExtractor {
     return this.scanFile(fullPath);
   }
 
-  /**
-   * Resolves and applies internal dependencies for a set of functions (Phase 2).
-   */
-  async applyInternalDependencies(units: IndexUnit[], allUnits: IndexUnit[]): Promise<IndexUnit[]> {
-    log("Resolving internal dependencies for %d units", units.length);
-    const functions = allUnits.filter(u => u.unitType === IndexUnitType.FUNCTION);
-    const nameIndex = this.buildNameIndex(functions);
-
-    return units.map(unit => {
-      if (unit.unitType !== IndexUnitType.FUNCTION) return unit;
-      return this.applyInternalDependenciesToFunction(unit, nameIndex);
-    });
-  }
-
-  /**
-   * Enriches a single FUNCTION unit by resolving its call sites into references
-   * to other locally-indexed FUNCTION units (best-effort, name-based resolution).
-   */
-  private applyInternalDependenciesToFunction(fn: IndexUnit, nameIndex: Map<string, IndexUnit[]>): IndexUnit {
-    const extractor = this.findExtractor(fn.filePath);
-    if (!extractor) return fn;
-
-    const callNames = extractor.extractCallsFromUnit(fn.filePath, fn.id);
-    const resolvedFunctions = this.resolveInternalCalls(callNames, nameIndex, fn.filePath);
-
-    const functionRefs = resolvedFunctions.map(f => ({
-      id: f.id,
-      name: f.name,
-      filePath: f.filePath,
-      startLine: f.startLine,
-      endLine: f.endLine,
-      code: f.code,
-      unitType: f.unitType,
-      parentId: f.parentId,
-    }));
-
-    return { ...fn, callDependencies: functionRefs };
-  }
-
-  /**
-   * Resolves extracted call names to known local functions, preferring same-file definitions.
-   * De-duplicates resolved functions to avoid repeated dependencies.
-   */
-  private resolveInternalCalls(callNames: string[], nameIndex: Map<string, IndexUnit[]>, currentFile: string): IndexUnit[] {
-    const resolved: IndexUnit[] = [];
-    const seen = new Set<string>();
-
-    for (const callName of callNames) {
-      const candidates = nameIndex.get(callName) || [];
-      const match = this.findBestMatch(candidates, currentFile);
-      if (match && !seen.has(match.id)) {
-        resolved.push(match);
-        seen.add(match.id);
-      }
-    }
-
-    return resolved;
-  }
-
-  /**
-   * Chooses the "best" candidate function for a call when multiple definitions share a name.
-   * Current heuristic: prefer same-file; otherwise take the first indexed candidate.
-   */
-  private findBestMatch(candidates: IndexUnit[], currentFile: string): IndexUnit | null {
-    if (candidates.length === 0) return null;
-
-    const sameFile = candidates.find(c => c.filePath === currentFile);
-    if (sameFile) return sameFile;
-
-    return candidates[0];
-  }
-
-  /**
-   * Builds a lookup index from function names to candidate FUNCTION units.
-   * Stores both the fully-qualified name and a "simple" last-segment variant (e.g. a.b.c -> c).
-   */
-  private buildNameIndex(functions: IndexUnit[]): Map<string, IndexUnit[]> {
-    const index = new Map<string, IndexUnit[]>();
-
-    for (const fn of functions) {
-      const simpleName = this.extractSimpleName(fn.name);
-      const existingSimple = index.get(simpleName) || [];
-      existingSimple.push(fn);
-      index.set(simpleName, existingSimple);
-
-      const qualified = index.get(fn.name) || [];
-      qualified.push(fn);
-      index.set(fn.name, qualified);
-    }
-
-    return index;
-  }
-
-  /**
-   * Extracts the last segment of a dotted/qualified function name.
-   */
-  private extractSimpleName(fullName: string): string {
-    const parts = fullName.split(".");
-    return parts[parts.length - 1];
-  }
-
-  /**
-   * Finds the language extractor responsible for a given file path, if any.
-   */
-  private findExtractor(filePath: string): LanguageExtractor | undefined {
-    return this.extractors.find(ex => ex.supports(filePath));
-  }
 
   /**
    * Scans a directory recursively, extracting units from supported files while honoring exclusions.
