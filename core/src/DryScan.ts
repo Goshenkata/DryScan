@@ -108,6 +108,7 @@ export class DryScan {
       version: 1,
       generatedAt: new Date().toISOString(),
       threshold: config.threshold,
+      grade: analysis.score.grade,
       score: analysis.score,
       duplicates: analysis.duplicates,
     };

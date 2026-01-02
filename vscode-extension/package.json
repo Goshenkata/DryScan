@@ -25,6 +25,16 @@
         "command": "dryscan.refreshView",
         "title": "⟳",
         "category": "DryScan"
+      },
+      {
+        "command": "dryscan.openPair",
+        "title": "Open Duplicate Pair",
+        "category": "DryScan"
+      },
+      {
+        "command": "dryscan.excludePair",
+        "title": "Exclude Duplicate Pair",
+        "category": "DryScan"
       }
     ],
     "viewsContainers": {
@@ -52,6 +62,14 @@
           "when": "view == dryscanView",
           "group": "navigation",
           "icon": "$(refresh)"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "dryscan.excludePair",
+          "when": "view == dryscanView && viewItem == dryscan.duplicatePair",
+          "group": "inline",
+          "icon": "$(close)"
         }
       ]
     }

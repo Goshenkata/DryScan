@@ -30,6 +30,7 @@ export interface DuplicateReport {
   version: number;
   generatedAt: string;
   threshold: number;
+  grade: DuplicationScore["grade"];
   score: DuplicationScore;
   duplicates: DuplicateGroup[];
 }

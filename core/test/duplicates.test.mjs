@@ -157,6 +157,32 @@ describe("DryScan - Duplicate Detection", function() {
       }
     });
 
+    it("exposes the duplication grade on the report", async () => {
+      const units = [
+        makeUnit("1", "alpha", [1, 0]),
+        makeUnit("2", "beta", [1, 0]),
+      ];
+
+      const scanner = await stubbedScanner(units, { threshold: 0.5 });
+      const report = await scanner.buildDuplicateReport();
+
+      expect(report).to.have.property("grade");
+      expect(report.grade).to.equal(report.score.grade);
+    });
+
+    it("computes the final grade from duplicate score", async () => {
+      const units = [
+        makeUnit("1", "gamma", [1, 0]),
+        makeUnit("2", "gammaCopy", [1, 0]),
+      ];
+
+      const scanner = await stubbedScanner(units, { threshold: 0.4 });
+      const report = await scanner.buildDuplicateReport();
+
+      // Identical 3-line functions produce a 50% duplication score -> Critical grade
+      expect(report.grade).to.equal("Critical");
+    });
+
     it("skips comparisons for nested blocks in same file", async () => {
       const block = (id, name, start, end) => ({
         id,
