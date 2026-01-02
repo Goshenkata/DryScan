@@ -1,6 +1,10 @@
 # DryScan
 A Semantic Code Duplication & Reuse Analyzer
 
+[![Build](https://github.com/Goshenkata/DryScan/actions/workflows/release.yml/badge.svg)](https://github.com/Goshenkata/DryScan/actions/workflows/release.yml)
+[![npm @goshenkata/dryscan-core](https://img.shields.io/npm/v/@goshenkata/dryscan-core?label=core&color=blue)](https://www.npmjs.com/package/@goshenkata/dryscan-core)
+[![npm @goshenkata/dryscan-cli](https://img.shields.io/npm/v/@goshenkata/dryscan-cli?label=cli&color=blue)](https://www.npmjs.com/package/@goshenkata/dryscan-cli)
+
 ## Architecture
 
 This monorepo contains:
