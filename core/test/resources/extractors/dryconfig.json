@@ -7,6 +7,6 @@
   "minBlockLines": 5,
   "threshold": 0.88,
   "embeddingModel": "embeddinggemma",
-  "embeddingBaseUrl": "http://localhost:11434",
+  "embeddingSource": "http://localhost:11434",
   "contextLength": 2048
 }

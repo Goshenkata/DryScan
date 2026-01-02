@@ -7,3 +7,4 @@ export {
 	DuplicateReport,
 	DryConfig,
 } from './types';
+export { EmbeddingService } from './services/EmbeddingService';

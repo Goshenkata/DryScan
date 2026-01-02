@@ -51,7 +51,7 @@ export interface DryConfig {
   minBlockLines: number;
   threshold: number;
   embeddingModel: string;
-  embeddingBaseUrl?: string;
+  embeddingSource?: string;
   contextLength: number;
 }
 

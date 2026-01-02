@@ -13,7 +13,7 @@ export const DEFAULT_CONFIG: DryConfig = {
   minBlockLines: 5,
   threshold: 0.88,
   embeddingModel: "embeddinggemma",
-  embeddingBaseUrl: process.env.OLLAMA_API_URL || "http://localhost:11434",
+  embeddingSource: "http://localhost:11434",
   contextLength: 2048,
 };
 
@@ -28,7 +28,7 @@ const partialConfigSchema: Schema = {
     minBlockLines: { type: "number" },
     threshold: { type: "number" },
     embeddingModel: { type: "string" },
-    embeddingBaseUrl: { type: "string" },
+    embeddingSource: { type: "string" },
     contextLength: { type: "number" },
   },
 };

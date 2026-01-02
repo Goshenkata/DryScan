@@ -210,7 +210,7 @@ EOF
   "minBlockLines": 6,
   "threshold": 0.99,
   "embeddingModel": "embeddinggemma",
-  "embeddingBaseUrl": "http://localhost:11434"
+  "embeddingSource": "http://localhost:11434"
 }
 JSON
 
@@ -240,7 +240,7 @@ JSON
   "minBlockLines": 5,
   "threshold": 0.85,
   "embeddingModel": "embeddinggemma",
-  "embeddingBaseUrl": "http://localhost:11434"
+  "embeddingSource": "http://localhost:11434"
 }
 JSON
 

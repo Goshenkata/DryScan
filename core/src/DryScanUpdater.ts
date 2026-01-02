@@ -5,8 +5,7 @@ import { IndexUnit } from "./types";
 import { IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { FileEntity } from "./db/entities/FileEntity";
-import { OllamaEmbeddings } from "@langchain/ollama";
-import { configStore } from "./config/configStore";
+import { EmbeddingService } from "./services/EmbeddingService";
 
 const log = debug("DryScan:Updater");
 
@@ -157,35 +156,6 @@ export async function updateFileTracking(
 }
 
 /**
- * Computes semantic embedding for a single function.
- * Uses Ollama with embeddinggemma model.
- * 
- * @param fn - Function to compute embedding for
- * @returns Function with embedding populated
- */
-export async function addEmbedding(repoPath: string, fn: IndexUnit): Promise<IndexUnit> {
-  try {
-    const config = await configStore.get(repoPath);
-    const maxContext = config?.contextLength ?? 2048;
-    if (fn.code.length > maxContext) {
-      log("Skipping embedding for %s (code length %d exceeds context %d)", fn.id, fn.code.length, maxContext);
-      return { ...fn, embedding: null };
-    }
-    const embeddings = new OllamaEmbeddings({
-      model: config?.embeddingModel || "embeddinggemma",
-      baseUrl: config?.embeddingBaseUrl || process.env.OLLAMA_API_URL || "http://localhost:11434",
-    });
-    const embedding = await embeddings.embedQuery(fn.code);
-    fn.embedding = embedding;
-    return fn;
-  } catch (err) {
-    log("Embedding provider failed, please connect to Ollama API or Cloud AI:", err);
-    throw err;
-  }
-}
-
-
-/**
  * Performs incremental update of the DryScan index.
  * Detects file changes and reprocesses only affected files.
  * 
@@ -199,6 +169,7 @@ export async function performIncrementalUpdate(
   db: DryScanDatabase,
 ): Promise<FileChangeSet> {
   log("Starting incremental update");
+  const embeddingService = new EmbeddingService(repoPath);
   
   // Step 1: Detect changes
   const changeSet = await detectFileChanges(repoPath, extractor, db);
@@ -236,7 +207,7 @@ export async function performIncrementalUpdate(
       for (let i = 0; i < total; i++) {
         const unit = newUnits[i];
         try {
-          const enriched = await addEmbedding(repoPath, unit);
+          const enriched = await embeddingService.addEmbedding(unit);
           updatedWithEmbeddings.push(enriched);
         } catch (err: any) {
           console.error(
