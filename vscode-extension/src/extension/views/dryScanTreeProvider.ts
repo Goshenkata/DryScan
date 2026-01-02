@@ -96,7 +96,13 @@ export function registerDryScanTreeView(
     showCollapseAll: false,
   });
 
-  context.subscriptions.push(treeView);
+  const visibilityDisposable = treeView.onDidChangeVisibility((event) => {
+    if (event.visible) {
+      provider.refresh();
+    }
+  });
+
+  context.subscriptions.push(treeView, visibilityDisposable);
 
   return provider;
 }
