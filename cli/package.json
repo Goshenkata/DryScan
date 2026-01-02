@@ -1,6 +1,6 @@
 {
   "name": "@goshenkata/dryscan-cli",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "CLI tool for DryScan - semantic code duplication analyzer",
   "type": "module",
   "main": "./dist/cli.js",
