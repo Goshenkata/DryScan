@@ -99,6 +99,10 @@ EOF
   [[ "${output}" == *"DryScan Duplicate Report"* ]]
   [[ "${output}" != *"Exclude this pair"* ]]
   [[ "${output}" != *"regenerate-btn"* ]]
+  
+  # Verify logs don't pollute HTML output (capture only stdout)
+  html_output=$(node "${CLI_BIN}" dupes --html "${TEST_ROOT}" 2>/dev/null)
+  [[ "${html_output}" != *"[DryScan]"* ]]
 
   (node "${CLI_BIN}" dupes --ui "${TEST_ROOT}" >"${BATS_TMPDIR}/ui-${BATS_TEST_NUMBER}.log" 2>&1) &
   UI_PID=$!

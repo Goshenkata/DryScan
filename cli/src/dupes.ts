@@ -79,45 +79,59 @@ function formatDuplicates(report: DuplicateReport, reportPath?: string): void {
 export async function handleDupesCommand(path: string, options: DupesOptions): Promise<void> {
   const repoPath = resolve(path);
   await configStore.init(repoPath);
-  const scanner = new DryScan(repoPath);
-  const report = await scanner.buildDuplicateReport();
-  const reportPath = await writeDuplicateReport(repoPath, report);
-
-  if (options.ui) {
-    const server = new DuplicateReportServer({
-      repoPath,
-      threshold: report.threshold,
-      duplicates: report.duplicates,
-      score: report.score,
-      port: UI_PORT,
-    });
-    await server.start();
-    return;
-  }
-
+  
+  // When outputting HTML, redirect console.log to stderr to keep HTML clean
+  const originalLog = console.log;
   if (options.html) {
-    const html = await renderHtmlReport({
-      threshold: report.threshold,
-      duplicates: report.duplicates,
-      score: report.score,
-      enableExclusions: false,
-    });
-    console.log(html);
-    return;
+    console.log = console.error;
   }
+  
+  try {
+    const scanner = new DryScan(repoPath);
+    const report = await scanner.buildDuplicateReport();
+    const reportPath = await writeDuplicateReport(repoPath, report);
 
-  if (options.json) {
-    console.log(
-      JSON.stringify(
-        {
-          ...report,
-          reportPath,
-        },
-        null,
-        2
-      )
-    );
-  } else {
-    formatDuplicates(report, reportPath);
+    if (options.ui) {
+      const server = new DuplicateReportServer({
+        repoPath,
+        threshold: report.threshold,
+        duplicates: report.duplicates,
+        score: report.score,
+        port: UI_PORT,
+      });
+      await server.start();
+      return;
+    }
+
+    if (options.html) {
+      const html = await renderHtmlReport({
+        threshold: report.threshold,
+        duplicates: report.duplicates,
+        score: report.score,
+        enableExclusions: false,
+      });
+      originalLog(html);
+      return;
+    }
+
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          {
+            ...report,
+            reportPath,
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      formatDuplicates(report, reportPath);
+    }
+  } finally {
+    // Restore original console.log
+    if (options.html) {
+      console.log = originalLog;
+    }
   }
 }
