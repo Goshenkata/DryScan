@@ -88,7 +88,8 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
     if (!group) {
       return;
     }
-    this.dependencies.showInfo("Hello world");
+
+    void this.presentPairActions(group);
   }
 
   async handleExcludePair(group: DuplicateGroup | undefined): Promise<void> {
@@ -170,18 +171,27 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
 
   private createSummaryItem(report: DuplicateReport): DryScanTreeItem {
     const score = report.score;
-    const label = `Duplication ${score.score.toFixed(1)}% (${report.grade})`;
-    const description = `Pairs: ${report.duplicates.length} | Lines affected: ${score.duplicateLines}`;
+    const percent = score.score.toFixed(1);
+    const label = `Duplication ${percent}% [${report.grade}]`;
+    const description = `Pairs ${report.duplicates.length} | Lines ${score.duplicateLines}`;
 
     const item = new DryScanTreeItem(label, vscode.TreeItemCollapsibleState.None);
     item.description = description;
-    item.tooltip = [
-      `Duplication score: ${score.score.toFixed(2)}%`,
-      `Grade: ${report.grade}`,
-      `Pairs: ${report.duplicates.length}`,
-      `Lines affected: ${score.duplicateLines}`,
-    ].join("\n");
-    item.iconPath = new vscode.ThemeIcon("graph-line");
+
+    const tooltip = new vscode.MarkdownString(
+      [
+        `**Duplication score:** ${score.score.toFixed(2)}%`,
+        `**Grade:** ${report.grade}`,
+        `**Duplicate pairs:** ${report.duplicates.length}`,
+        `**Lines affected:** ${score.duplicateLines}`,
+      ].join("\n\n")
+    );
+    tooltip.isTrusted = true;
+    item.tooltip = tooltip;
+
+    const iconName = score.score >= 20 ? "flame" : "shield";
+    const iconColor = new vscode.ThemeColor(score.score >= 20 ? "charts.red" : "charts.green");
+    item.iconPath = new vscode.ThemeIcon(iconName, iconColor);
     item.contextValue = "dryscan.summary";
 
     return item;
@@ -189,23 +199,28 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
 
   private createPairItem(group: DuplicateGroup): DryScanTreeItem {
     const similarityPercent = (group.similarity * 100).toFixed(1);
-    const label = `${group.left.name} <-> ${group.right.name}`;
+    const label = `${group.left.name} ⇔ ${group.right.name}`;
     const description = `${similarityPercent}%`;
     const item = new DryScanTreeItem(label, vscode.TreeItemCollapsibleState.None);
 
     item.id = group.id;
     item.description = description;
-    item.tooltip = [
-      this.formatLocation(group.left),
-      this.formatLocation(group.right),
-      `Exclusion key: ${group.exclusionString}`,
-    ].join("\n");
+    const tooltip = new vscode.MarkdownString(
+      [
+        `**Left:** ${this.formatLocation(group.left)}`,
+        `**Right:** ${this.formatLocation(group.right)}`,
+        `**Similarity:** ${similarityPercent}%`,
+        `**Exclusion key:** ${group.exclusionString}`,
+      ].join("\n\n")
+    );
+    tooltip.isTrusted = true;
+    item.tooltip = tooltip;
     item.command = {
       command: "dryscan.openPair",
       title: "Open Duplicate Pair",
       arguments: [group],
     };
-    item.iconPath = new vscode.ThemeIcon("link");
+    item.iconPath = new vscode.ThemeIcon("link", new vscode.ThemeColor("charts.blue"));
     item.contextValue = "dryscan.duplicatePair";
 
     return item;
@@ -214,6 +229,84 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
   private formatLocation(side: DuplicateGroup["left"]): string {
     const relativePath = vscode.workspace.asRelativePath(side.filePath, false);
     return `${relativePath}:${side.startLine}-${side.endLine}`;
+  }
+
+  private relativePath(filePath: string): string {
+    return vscode.workspace.asRelativePath(filePath, false);
+  }
+
+  private async presentPairActions(group: DuplicateGroup): Promise<void> {
+    const detail = [
+      `Left: ${this.formatLocation(group.left)}`,
+      `Right: ${this.formatLocation(group.right)}`,
+      `Similarity: ${(group.similarity * 100).toFixed(1)}%`,
+    ].join("\n");
+
+    const selection = await vscode.window.showInformationMessage(
+      detail,
+      "Open both",
+      "Open left",
+      "Open right",
+      "Copy details"
+    );
+
+    if (!selection) {
+      return;
+    }
+
+    if (selection === "Copy details") {
+      await vscode.env.clipboard.writeText(detail);
+      return;
+    }
+
+    if (selection === "Open both") {
+      await this.openSide(group.left, vscode.ViewColumn.One);
+      await this.openSide(group.right, vscode.ViewColumn.Two);
+      return;
+    }
+
+    if (selection === "Open left") {
+      await this.openSide(group.left, vscode.ViewColumn.Active);
+      return;
+    }
+
+    if (selection === "Open right") {
+      await this.openSide(group.right, vscode.ViewColumn.Active);
+    }
+  }
+
+  private async openSide(
+    side: DuplicateGroup["left"],
+    viewColumn: vscode.ViewColumn
+  ): Promise<void> {
+    try {
+      const document = await vscode.workspace.openTextDocument(side.filePath);
+      const range = this.getRange(document, side.startLine, side.endLine);
+      const editor = await vscode.window.showTextDocument(document, {
+        viewColumn,
+        selection: range,
+        preview: false,
+      });
+
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+    } catch (error) {
+      console.error("Failed to open duplicate pair location", error);
+      this.dependencies.showError("Unable to open duplicate pair. See console for details.");
+    }
+  }
+
+  private getRange(
+    document: vscode.TextDocument,
+    startLine: number,
+    endLine: number
+  ): vscode.Range {
+    const clampedStart = Math.max(startLine - 1, 0);
+    const clampedEnd = Math.max(endLine - 1, clampedStart);
+    const endCharacter = document.lineAt(Math.min(clampedEnd, document.lineCount - 1)).range.end.character;
+
+    const start = new vscode.Position(clampedStart, 0);
+    const end = new vscode.Position(clampedEnd, endCharacter);
+    return new vscode.Range(start, end);
   }
 
   private async getOrBuildReport(repoPath: string): Promise<DuplicateReport | null> {

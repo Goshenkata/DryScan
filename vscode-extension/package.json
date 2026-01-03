@@ -33,8 +33,12 @@
       },
       {
         "command": "dryscan.excludePair",
-        "title": "Exclude Duplicate Pair",
-        "category": "DryScan"
+        "title": "Exclude",
+        "category": "DryScan",
+        "icon": {
+          "light": "src/media/close-inline-light.svg",
+          "dark": "src/media/close-inline-dark.svg"
+        }
       }
     ],
     "viewsContainers": {
@@ -68,8 +72,7 @@
         {
           "command": "dryscan.excludePair",
           "when": "view == dryscanView && viewItem == dryscan.duplicatePair",
-          "group": "inline",
-          "icon": "$(close)"
+          "group": "inline@1"
         }
       ]
     }
