@@ -57,7 +57,7 @@ function registerOpenPairCommand(provider: DryScanTreeProvider): vscode.Disposab
 function registerExcludePairCommand(provider: DryScanTreeProvider): vscode.Disposable {
 	return vscode.commands.registerCommand(
 		"dryscan.excludePair",
-		(group: DuplicateGroup) => provider.handleExcludePair(group)
+		(group: any) => provider.handleExcludePair(group.command.arguments[0] as DuplicateGroup)
 	);
 }
 

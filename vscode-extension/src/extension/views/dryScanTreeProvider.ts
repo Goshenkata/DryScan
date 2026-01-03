@@ -10,6 +10,7 @@ import { getPrimaryWorkspacePath } from "../utils/workspaceContext.js";
 import { dryFolderExists } from "../utils/dryFolder.js";
 import { DiagnosticsManager } from "../managers/DiagnosticsManager.js";
 import { DecorationsManager } from "../managers/DecorationsManager.js";
+import path from "path";
 
 export const DRYSCAN_VIEW_ID = "dryscanView";
 
@@ -89,12 +90,17 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
     return element;
   }
 
-  handlePairClick(group: DuplicateGroup | undefined): void {
+  async handlePairClick(group: DuplicateGroup | undefined): Promise<void> {
     if (!group) {
       return;
     }
 
-    void this.presentPairActions(group);
+    await this.openBothSides(group);
+  }
+
+  private async openBothSides(group: DuplicateGroup): Promise<void> {
+    await this.openSide(group.left, vscode.ViewColumn.One);
+    await this.openSide(group.right, vscode.ViewColumn.Two);
   }
 
   async handleExcludePair(group: DuplicateGroup | undefined): Promise<void> {
@@ -236,82 +242,67 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
     return `${relativePath}:${side.startLine}-${side.endLine}`;
   }
 
-  private relativePath(filePath: string): string {
-    return vscode.workspace.asRelativePath(filePath, false);
-  }
-
-  private async presentPairActions(group: DuplicateGroup): Promise<void> {
-    const detail = [
-      `Left: ${this.formatLocation(group.left)}`,
-      `Right: ${this.formatLocation(group.right)}`,
-      `Similarity: ${(group.similarity * 100).toFixed(1)}%`,
-    ].join("\n");
-
-    const selection = await vscode.window.showInformationMessage(
-      detail,
-      "Open both",
-      "Open left",
-      "Open right",
-      "Copy details"
-    );
-
-    if (!selection) {
-      return;
-    }
-
-    if (selection === "Copy details") {
-      await vscode.env.clipboard.writeText(detail);
-      return;
-    }
-
-    if (selection === "Open both") {
-      await this.openSide(group.left, vscode.ViewColumn.One);
-      await this.openSide(group.right, vscode.ViewColumn.Two);
-      return;
-    }
-
-    if (selection === "Open left") {
-      await this.openSide(group.left, vscode.ViewColumn.Active);
-      return;
-    }
-
-    if (selection === "Open right") {
-      await this.openSide(group.right, vscode.ViewColumn.Active);
-    }
-  }
-
   private async openSide(
     side: DuplicateGroup["left"],
     viewColumn: vscode.ViewColumn
   ): Promise<void> {
     try {
-      const document = await vscode.workspace.openTextDocument(side.filePath);
-      const range = this.getRange(document, side.startLine, side.endLine);
-      const editor = await vscode.window.showTextDocument(document, {
-        viewColumn,
-        selection: range,
-        preview: false,
-      });
-
-      editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+      if (!this.currentRepoPath) {
+        throw new Error("Repository path is not set.");
+      }
+      const document = await this.openDocument(path.join(this.currentRepoPath, side.filePath));
+      const range = this.createRangeFromLines(document, side.startLine, side.endLine);
+      await this.showDocumentWithSelection(document, range, viewColumn);
     } catch (error) {
-      console.error("Failed to open duplicate pair location", error);
-      this.dependencies.showError("Unable to open duplicate pair. See console for details.");
+      this.handleOpenError(error);
     }
   }
 
-  private getRange(
+  private async openDocument(filePath: string): Promise<vscode.TextDocument> {
+    return await vscode.workspace.openTextDocument(filePath);
+  }
+
+  private async showDocumentWithSelection(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    viewColumn: vscode.ViewColumn
+  ): Promise<void> {
+    const editor = await vscode.window.showTextDocument(document, {
+      viewColumn,
+      selection: range,
+      preview: false,
+    });
+
+    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+  }
+
+  private handleOpenError(error: unknown): void {
+    console.error("Failed to open duplicate pair location", error);
+    this.dependencies.showError("Unable to open duplicate pair. See console for details.");
+  }
+
+  private createRangeFromLines(
     document: vscode.TextDocument,
     startLine: number,
     endLine: number
   ): vscode.Range {
-    const clampedStart = Math.max(startLine - 1, 0);
+    const clampedStart = this.clampLineNumber(startLine - 1);
     const clampedEnd = Math.max(endLine - 1, clampedStart);
-    const endCharacter = document.lineAt(Math.min(clampedEnd, document.lineCount - 1)).range.end.character;
+    const endCharacter = this.getLineEndCharacter(document, clampedEnd);
 
-    const start = new vscode.Position(clampedStart, 0);
-    const end = new vscode.Position(clampedEnd, endCharacter);
-    return new vscode.Range(start, end);
+    return new vscode.Range(
+      new vscode.Position(clampedStart, 0),
+      new vscode.Position(clampedEnd, endCharacter)
+    );
+  }
+
+  private clampLineNumber(lineNumber: number): number {
+    return Math.max(lineNumber, 0);
+  }
+
+  private getLineEndCharacter(document: vscode.TextDocument, lineNumber: number): number {
+    const safeLine = Math.min(lineNumber, document.lineCount - 1);
+    return document.lineAt(safeLine).range.end.character;
   }
 
   private async getOrBuildReport(repoPath: string): Promise<DuplicateReport | null> {
