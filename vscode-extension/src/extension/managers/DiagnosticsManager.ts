@@ -79,43 +79,49 @@ export class DiagnosticsManager {
     const otherSide = side === "left" ? pair.right : pair.left;
     
     const similarityPercent = (pair.similarity * 100).toFixed(1);
-    const otherBasename = this.getBasename(otherSide.filePath);
+    const range = this.createRange(currentSide);
+    const message = this.createDiagnosticMessage(similarityPercent);
     
-    const range = new vscode.Range(
-      new vscode.Position(Math.max(0, currentSide.startLine - 1), 0),
-      new vscode.Position(Math.max(0, currentSide.endLine - 1), Number.MAX_SAFE_INTEGER)
-    );
-
-    const message = `Duplicate code (${similarityPercent}% similar) with ${otherBasename}:${otherSide.startLine}-${otherSide.endLine}`;
     const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Information);
-    
     diagnostic.source = "DryScan";
-    diagnostic.code = {
-      value: pair.id,
-      target: vscode.Uri.parse(`command:dryscan.openPairFromDiagnostic?${encodeURIComponent(JSON.stringify({ pairId: pair.id }))}`)
-    };
-
-    // Add related information pointing to the other file (with absolute path)
-    const otherAbsPath = this.resolveAbsolutePath(otherSide.filePath, workspacePath);
-    diagnostic.relatedInformation = [
-      new vscode.DiagnosticRelatedInformation(
-        new vscode.Location(
-          vscode.Uri.file(otherAbsPath),
-          new vscode.Range(
-            new vscode.Position(Math.max(0, otherSide.startLine - 1), 0),
-            new vscode.Position(Math.max(0, otherSide.endLine - 1), Number.MAX_SAFE_INTEGER)
-          )
-        ),
-        `Duplicate pair (${similarityPercent}% similar)`
-      )
-    ];
+    diagnostic.code = this.createCodeLink(otherSide, workspacePath);
 
     return diagnostic;
   }
 
-  private formatLocation(side: DuplicateGroup["left"]): string {
-    const relativePath = vscode.workspace.asRelativePath(side.filePath, false);
-    return `${relativePath}:${side.startLine}-${side.endLine}`;
+  private createDiagnosticMessage(similarityPercent: string): string {
+    return `Duplicate code (${similarityPercent}% similar)`;
+  }
+
+  private createCodeLink(side: DuplicateGroup["left"], workspacePath: string): { value: string; target: vscode.Uri } {
+    const basename = this.getBasename(side.filePath);
+    const codeValue = `${basename}:${side.startLine}-${side.endLine}`;
+    const targetUri = this.createFileLocationUri(side, workspacePath);
+
+    return {
+      value: codeValue,
+      target: targetUri
+    };
+  }
+
+  private createFileLocationUri(side: DuplicateGroup["left"], workspacePath: string): vscode.Uri {
+    const absolutePath = this.resolveAbsolutePath(side.filePath, workspacePath);
+    const startLine = Math.max(0, side.startLine - 1);
+    const endLine = Math.max(0, side.endLine - 1);
+    
+    return vscode.Uri.file(absolutePath).with({
+      fragment: `L${startLine + 1}-L${endLine + 1}`
+    });
+  }
+
+  private createRange(side: DuplicateGroup["left"]): vscode.Range {
+    const startLine = Math.max(0, side.startLine - 1);
+    const endLine = Math.max(0, side.endLine - 1);
+    
+    return new vscode.Range(
+      new vscode.Position(startLine, 0),
+      new vscode.Position(endLine, Number.MAX_SAFE_INTEGER)
+    );
   }
 
   private getBasename(filePath: string): string {
