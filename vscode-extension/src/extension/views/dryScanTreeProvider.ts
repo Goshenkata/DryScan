@@ -8,6 +8,8 @@ import {
 } from "@goshenkata/dryscan-core";
 import { getPrimaryWorkspacePath } from "../utils/workspaceContext.js";
 import { dryFolderExists } from "../utils/dryFolder.js";
+import { DiagnosticsManager } from "../managers/DiagnosticsManager.js";
+import { DecorationsManager } from "../managers/DecorationsManager.js";
 
 export const DRYSCAN_VIEW_ID = "dryscanView";
 
@@ -19,6 +21,8 @@ type Dependencies = {
   saveConfig: (repoPath: string, config: DryConfig) => Promise<void>;
   showError: (message: string) => void;
   showInfo: (message: string) => void;
+  diagnosticsManager?: DiagnosticsManager;
+  decorationsManager?: DecorationsManager;
 };
 
 export class DryScanTreeItem extends vscode.TreeItem {
@@ -57,6 +61,7 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
   refresh(): void {
     this.clearCachedReport();
     this.onDidChangeTreeDataEmitter.fire();
+    void this.updateManagers();
   }
 
   async getChildren(): Promise<DryScanTreeItem[]> {
@@ -358,12 +363,53 @@ export class DryScanTreeProvider implements vscode.TreeDataProvider<DryScanTreeI
     this.cachedReport = null;
     this.reportPromise = null;
   }
+
+  getPairById(pairId: string): DuplicateGroup | undefined {
+    if (!this.cachedReport) {
+      return undefined;
+    }
+    return this.cachedReport.duplicates.find((group) => group.id === pairId);
+  }
+
+  private async updateManagers(): Promise<void> {
+    const repoPath = this.dependencies.getWorkspacePath();
+    if (!repoPath) {
+      return;
+    }
+
+    const report = await this.getOrBuildReport(repoPath);
+    if (!report) {
+      this.dependencies.diagnosticsManager?.clear();
+      this.dependencies.decorationsManager?.clear();
+      return;
+    }
+
+    this.dependencies.diagnosticsManager?.updateDiagnostics(report.duplicates, repoPath);
+    this.dependencies.decorationsManager?.updateDecorations(report.duplicates, repoPath);
+  }
 }
 
 export function registerDryScanTreeView(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  diagnosticsManager: DiagnosticsManager,
+  decorationsManager: DecorationsManager
 ): DryScanTreeProvider {
-  const provider = new DryScanTreeProvider();
+  const provider = new DryScanTreeProvider({
+    getWorkspacePath: getPrimaryWorkspacePath,
+    hasDryFolder: dryFolderExists,
+    createDryScan: (repoPath: string) => new DryScan(repoPath),
+    loadConfig: (repoPath: string) => configStore.get(repoPath),
+    saveConfig: (repoPath: string, config: DryConfig) => configStore.save(repoPath, config),
+    showError: (message: string) => {
+      void vscode.window.showErrorMessage(message);
+    },
+    showInfo: (message: string) => {
+      void vscode.window.showInformationMessage(message);
+    },
+    diagnosticsManager,
+    decorationsManager,
+  });
+
   const treeView = vscode.window.createTreeView(DRYSCAN_VIEW_ID, {
     treeDataProvider: provider,
     showCollapseAll: false,

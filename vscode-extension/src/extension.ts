@@ -6,20 +6,28 @@ import {
 	registerDryScanTreeView,
 } from "./extension/views/dryScanTreeProvider.js";
 import { DuplicateGroup } from "@goshenkata/dryscan-core";
+import { DiagnosticsManager } from "./extension/managers/DiagnosticsManager.js";
+import { DecorationsManager } from "./extension/managers/DecorationsManager.js";
 
 export function activate(context: vscode.ExtensionContext): void {
-	const provider = registerDryScanTreeView(context);
+	const diagnosticsManager = new DiagnosticsManager();
+	const decorationsManager = new DecorationsManager();
+	const provider = registerDryScanTreeView(context, diagnosticsManager, decorationsManager);
+
 	context.subscriptions.push(
-		registerInitCommand(),
+		diagnosticsManager,
+		decorationsManager,
+		registerInitCommand(provider),
 		registerRefreshCommand(provider),
 		registerOpenPairCommand(provider),
-		registerExcludePairCommand(provider)
+		registerExcludePairCommand(provider),
+		registerOpenPairFromDiagnosticCommand(provider)
 	);
 }
 
 export function deactivate(): void {}
 
-function registerInitCommand(): vscode.Disposable {
+function registerInitCommand(provider: DryScanTreeProvider): vscode.Disposable {
 	return vscode.commands.registerCommand("dryscan.init", async (pathFromCommand?: string) => {
 		const repoPath = typeof pathFromCommand === "string"
 			? pathFromCommand
@@ -29,6 +37,7 @@ function registerInitCommand(): vscode.Disposable {
 			return;
 		}
 		await handleInitCommand(repoPath);
+		provider.refresh();
 	});
 }
 
@@ -49,5 +58,17 @@ function registerExcludePairCommand(provider: DryScanTreeProvider): vscode.Dispo
 	return vscode.commands.registerCommand(
 		"dryscan.excludePair",
 		(group: DuplicateGroup) => provider.handleExcludePair(group)
+	);
+}
+
+function registerOpenPairFromDiagnosticCommand(provider: DryScanTreeProvider): vscode.Disposable {
+	return vscode.commands.registerCommand(
+		"dryscan.openPairFromDiagnostic",
+		async (args: { pairId: string }) => {
+			const pair = provider.getPairById(args.pairId);
+			if (pair) {
+				await provider.handlePairClick(pair);
+			}
+		}
 	);
 }
