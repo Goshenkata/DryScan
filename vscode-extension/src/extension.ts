@@ -8,15 +8,18 @@ import {
 import { DuplicateGroup } from "@goshenkata/dryscan-core";
 import { DiagnosticsManager } from "./extension/managers/DiagnosticsManager.js";
 import { DecorationsManager } from "./extension/managers/DecorationsManager.js";
+import { AutoRefreshManager } from "./extension/managers/AutoRefreshManager.js";
 
 export function activate(context: vscode.ExtensionContext): void {
 	const diagnosticsManager = new DiagnosticsManager();
 	const decorationsManager = new DecorationsManager();
 	const provider = registerDryScanTreeView(context, diagnosticsManager, decorationsManager);
+	const autoRefreshManager = new AutoRefreshManager(() => provider.refresh());
 
 	context.subscriptions.push(
 		diagnosticsManager,
 		decorationsManager,
+		autoRefreshManager,
 		registerInitCommand(provider),
 		registerRefreshCommand(provider),
 		registerOpenPairCommand(provider),
