@@ -57,14 +57,12 @@ or provide an Ollama URL to use local embeddings;
 	- [x] Caching of comparisons
 	- [x] remove of nesting blocks from comparison
 
-- [ ] **VS Code Extension**
-	- [ ] Inline duplicate highlighting
-	- [ ] Show duplication score in editor
-	- [ ] Model switch UI
-	- [ ] Quick ignore/add to .dryignore
+- [X] **VS Code Extension**
+	- [x] Inline duplicate highlighting
+	- [x] Show duplication score in editor
+	- [x] Quick ignore/add to .dryignore
 
 - [ ] **CI/CD Tools**
-	- [ ] Dockerized CLI
 	- [X] Cloud AI
 	- [ ] GitHub Action
 	- [ ] Failure thresholds (block PRs)

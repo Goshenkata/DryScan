@@ -16,6 +16,13 @@ export interface UiServerOptions {
   score: DuplicationScore;
 }
 
+export interface HtmlRenderOptions {
+  threshold: number;
+  duplicates: DuplicateGroup[];
+  score: DuplicationScore;
+  enableExclusions: boolean;
+}
+
 const defaultPort = 3000;
 
 const gradeMeta: Record<DuplicationScore["grade"], { emoji: string; className: string }> = {
@@ -130,6 +137,7 @@ export class DuplicateReportServer {
         thresholdPct: Math.round(this.state.threshold * 100),
         duplicatesJson: JSON.stringify(this.state.duplicates),
         score: buildScoreView(this.state.score),
+        enableExclusions: true,
         });
         res.end(html);
       } catch (err: any) {
@@ -203,4 +211,17 @@ function buildScoreView(score: DuplicationScore) {
     duplicateLinesFormatted: score.duplicateLines.toLocaleString(),
     duplicateGroupsFormatted: score.duplicateGroups.toLocaleString(),
   };
+}
+
+/**
+ * Renders the HTML report as a string without starting a server.
+ */
+export async function renderHtmlReport(options: HtmlRenderOptions): Promise<string> {
+  const template = await loadTemplate();
+  return template({
+    thresholdPct: Math.round(options.threshold * 100),
+    duplicatesJson: JSON.stringify(options.duplicates),
+    score: buildScoreView(options.score),
+    enableExclusions: options.enableExclusions,
+  });
 }

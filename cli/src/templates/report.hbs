@@ -172,7 +172,9 @@
       </div>
       <div class="header-right">
         <button class="toggle" id="theme-toggle"><span class="toggle-icon">🌙</span><span id="theme-label">Dark</span></button>
+        {{#if enableExclusions}}
          <button class="btn" id="regenerate-btn">Regenerate report</button>
+        {{/if}}
       </div>
     </div>
     <section class="score-card">
@@ -315,6 +317,7 @@
 
       const footer = document.createElement('div');
       footer.className = 'row';
+      {{#if enableExclusions}}
       const excludeBtn = document.createElement('button');
       excludeBtn.className = 'btn secondary';
       excludeBtn.textContent = 'Exclude this pair';
@@ -322,6 +325,7 @@
       excludeBtn.dataset.id = group.shortId || '';
       excludeBtn.disabled = !group.shortId;
       footer.appendChild(excludeBtn);
+      {{/if}}
       if (group.exclusionString) {
         const exclusionMeta = document.createElement('div');
         exclusionMeta.className = 'muted';
@@ -408,7 +412,7 @@
           modal.classList.add('active');
         }
       }
-      
+      {{#if enableExclusions}}
       if (target && target.dataset && target.dataset.action === 'exclude-pair') {
         const id = target.dataset.id;
         if (!id) {
@@ -435,11 +439,14 @@
           target.disabled = false;
         }
       }
+      {{/if}}
     });
 
+    {{#if enableExclusions}}
     document.getElementById('regenerate-btn')?.addEventListener('click', async () => {
       await regenerateReport();
     });
+    {{/if}}
 
     render();
   </script>

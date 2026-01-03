@@ -93,6 +93,13 @@ EOF
   [[ "${output}" == *"\"threshold\""* ]]
   [[ "${output}" == *"\"duplicates\""* ]]
 
+  run_dryscan dupes --html "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"<!DOCTYPE html>"* ]]
+  [[ "${output}" == *"DryScan Duplicate Report"* ]]
+  [[ "${output}" != *"Exclude this pair"* ]]
+  [[ "${output}" != *"regenerate-btn"* ]]
+
   (node "${CLI_BIN}" dupes --ui "${TEST_ROOT}" >"${BATS_TMPDIR}/ui-${BATS_TEST_NUMBER}.log" 2>&1) &
   UI_PID=$!
   wait_for_ui

@@ -2,11 +2,11 @@ import { resolve } from 'path';
 import type { DuplicateReport } from '@goshenkata/dryscan-core';
 import { DryScan, configStore } from '@goshenkata/dryscan-core';
 import { writeDuplicateReport } from './reports.js';
-import { DuplicateReportServer } from './uiServer.js';
+import { DuplicateReportServer, renderHtmlReport } from './uiServer.js';
 
 const UI_PORT = 3000;
 
-type DupesOptions = { json?: boolean; ui?: boolean };
+type DupesOptions = { json?: boolean; ui?: boolean; html?: boolean };
 
 function formatCodeSnippet(code: string, maxLines: number = 15): string {
   const lines = code.split('\n');
@@ -92,6 +92,17 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
       port: UI_PORT,
     });
     await server.start();
+    return;
+  }
+
+  if (options.html) {
+    const html = await renderHtmlReport({
+      threshold: report.threshold,
+      duplicates: report.duplicates,
+      score: report.score,
+      enableExclusions: false,
+    });
+    console.log(html);
     return;
   }
 
