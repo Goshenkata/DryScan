@@ -4,7 +4,7 @@
   "description": "A Semantic Code Duplication & Reuse Analyzer",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "workspaces": [
     "core",
