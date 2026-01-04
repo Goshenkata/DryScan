@@ -46,7 +46,7 @@ Embeddings: set `embeddingSource` in `dryconfig.json` to `huggingface` to use Hu
 or provide an Ollama URL to use local embeddings;
 
 ## Project Roadmap / TODOs
- - [ ] **ROAMAP**
+ - [X] **ROAMAP**
 	- [x] [ADR-001: Multi-level duplication units (class, function, block)](.github/docs/adr-001-multilevel-duplication-units.md)
 	- [x] [ADR-002: AI triviality detection](.github/docs/adr-002-static-triviality-filtering.md)
     - [x] add dryscan config
@@ -62,15 +62,11 @@ or provide an Ollama URL to use local embeddings;
 	- [x] Show duplication score in editor
 	- [x] Quick ignore/add to .dryignore
 
-- [ ] **CI/CD Tools**
+- [X] **CI/CD Tools**
 	- [X] Cloud AI
-	- [ ] GitHub Action
-	- [ ] Failure thresholds (block PRs)
-	- [ ] Duplication score in CI reports
-
-- [ ] **Nice to have**
-	- [ ] Refactoring suggestions - vscode
-	- [ ] Cross-repo analysis 
+	- [X] GitHub Action
+	- [X] Failure thresholds (block PRs)
+	- [X] Duplication score in CI reports
 
 ## License
 
