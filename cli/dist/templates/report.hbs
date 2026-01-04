@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DryScan Duplicates</title>
+  <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlightjs-line-numbers.js/2.8.0/styles/line-numbers.min.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+    :root {
+      --bg: #0b1021;
+      --panel: #0f162f;
+      --card: #121b38;
+      --border: #1c284a;
+      --muted: #9aa6c0;
+      --accent: #5eead4;
+      --accent-2: #60a5fa;
+      --accent-3: #f472b6;
+      --shadow: 0 24px 60px rgba(0,0,0,0.35);
+      --class: #f59e0b;
+      --function: #22d3ee;
+      --block: #a855f7;
+      --text: #e6edf7;
+      --code-bg: #0a0f1e;
+      --excellent: #10b981;
+      --good: #22d3ee;
+      --fair: #f59e0b;
+      --poor: #f97316;
+      --critical: #ef4444;
+    }
+    [data-theme='light'] {
+      --bg: #f7f9fc;
+      --panel: #ffffff;
+      --card: #ffffff;
+      --border: #d9e2ec;
+      --muted: #667799;
+      --accent: #2563eb;
+      --accent-2: #0ea5e9;
+      --accent-3: #ec4899;
+      --shadow: 0 16px 40px rgba(15,23,42,0.15);
+      --class: #d97706;
+      --function: #0ea5e9;
+      --block: #8b5cf6;
+      --text: #0f172a;
+      --code-bg: #f5f7fb;
+      --excellent: #059669;
+      --good: #0891b2;
+      --fair: #d97706;
+      --poor: #ea580c;
+      --critical: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 20%, rgba(96,165,250,0.12), transparent 30%),
+                  radial-gradient(circle at 75% 10%, rgba(244,114,182,0.12), transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'IBM Plex Sans', sans-serif;
+      min-height: 100vh;
+      padding: 28px;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+    h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+    .layout { max-width: 1280px; margin: 0 auto 40px auto; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      margin-top: 18px;
+      transition: background 0.3s ease, border 0.3s ease;
+    }
+    .header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+    .header-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 12px; border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      color: var(--text); font-size: 12px; letter-spacing: 0.02em;
+      transition: background 0.3s ease, border 0.3s ease, color 0.3s ease;
+    }
+    .pill .pill-emoji { font-size: 14px; }
+    .pill.accent { color: var(--accent); border-color: rgba(94,234,212,0.3); }
+    .pill.type { font-weight: 700; text-transform: uppercase; }
+    .pill.class { color: var(--class); border-color: rgba(245,158,11,0.35); }
+    .pill.function { color: var(--function); border-color: rgba(34,211,238,0.35); }
+    .pill.excellent { color: var(--excellent); border-color: rgba(16,185,129,0.35); font-weight: 700; }
+    .pill.good { color: var(--good); border-color: rgba(34,211,238,0.35); font-weight: 700; }
+    .pill.fair { color: var(--fair); border-color: rgba(245,158,11,0.35); font-weight: 700; }
+    .pill.poor { color: var(--poor); border-color: rgba(249,115,22,0.35); font-weight: 700; }
+    .pill.critical { color: var(--critical); border-color: rgba(239,68,68,0.35); font-weight: 700; }
+    .score-card {
+      margin-top: 28px;
+      padding: 28px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.04);
+      background: linear-gradient(135deg, rgba(96,165,250,0.08), rgba(13,23,45,0.9));
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+    }
+    [data-theme='light'] .score-card {
+      background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(255,255,255,0.95));
+      border-color: rgba(15,23,42,0.08);
+    }
+    .score-main { flex: 1 1 240px; }
+    .score-label { text-transform: uppercase; font-size: 12px; letter-spacing: 0.2em; color: var(--muted); }
+    .score-value { display: flex; align-items: baseline; gap: 18px; margin-top: 12px; }
+    .score-number { font-size: 56px; font-weight: 700; letter-spacing: -0.04em; }
+    .score-grade { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; text-transform: uppercase; }
+    .score-grade.excellent { color: var(--excellent); }
+    .score-grade.good { color: var(--good); }
+    .score-grade.fair { color: var(--fair); }
+    .score-grade.poor { color: var(--poor); }
+    .score-grade.critical { color: var(--critical); }
+    .score-emoji { font-size: 20px; }
+    .score-description { margin-top: 8px; color: var(--muted); font-size: 14px; max-width: 420px; }
+    .score-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; flex: 2 1 320px; }
+    .metric {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    [data-theme='light'] .metric { background: rgba(15,23,42,0.02); }
+    .metric-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted); }
+    .metric-value { font-size: 20px; font-weight: 600; }
+    .overview-text {
+      margin-top: 18px;
+      padding: 14px 18px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; margin-top: 14px; }
+    .side { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; transition: background 0.3s ease, border 0.3s ease; }
+    .path { font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-size: 12px; margin-bottom: 6px; word-break: break-all; }
+    .code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text); overflow: auto; max-height: 260px; }
+    [data-theme='light'] .code { color: #111827; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .btn { background: linear-gradient(120deg, var(--accent), var(--accent-2)); color: #0b1021; border: none; padding: 9px 12px; border-radius: 10px; cursor: pointer; font-weight: 700; box-shadow: 0 12px 28px rgba(96,165,250,0.35); transition: transform 0.1s ease; }
+    .btn.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .toggle { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text); cursor: pointer; font-weight: 600; }
+    .toggle-icon { font-size: 14px; }
+    .btn:active { transform: translateY(1px); }
+    .muted { color: var(--muted); font-size: 12px; }
+    .modal { position: fixed; inset: 0; background: rgba(5,7,15,0.7); display: none; align-items: center; justify-content: center; padding: 28px; z-index: 20; }
+    .modal.active { display: flex; }
+    .modal-content { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; max-width: 1100px; width: 100%; max-height: 92vh; overflow: auto; padding: 18px; box-shadow: var(--shadow); transition: background 0.3s ease, border 0.3s ease; }
+    .modal h3 { margin: 0 0 10px 0; }
+    .close { float: right; cursor: pointer; color: var(--muted); font-size: 18px; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="header">
+      <div class="header-left">
+        <h1>DryScan Duplicate Report</h1>
+        <span class="pill accent">Threshold {{thresholdPct}}%</span>
+        <span class="pill {{score.gradeClass}}"><span class="pill-emoji">{{score.emoji}}</span>{{score.scoreRounded}}% · {{score.grade}}</span>
+      </div>
+      <div class="header-right">
+        <button class="toggle" id="theme-toggle"><span class="toggle-icon">🌙</span><span id="theme-label">Dark</span></button>
+        {{#if enableExclusions}}
+         <button class="btn" id="regenerate-btn">Regenerate report</button>
+        {{/if}}
+      </div>
+    </div>
+    <section class="score-card">
+      <div class="score-main">
+        <div class="score-label">Duplication Score</div>
+        <div class="score-value">
+          <span class="score-number">{{score.scoreRounded}}%</span>
+          <span class="score-grade {{score.gradeClass}}">
+            <span class="score-emoji">{{score.emoji}}</span>
+            {{score.grade}}
+          </span>
+        </div>
+        <p class="score-description">Weighted duplicate lines across the entire codebase. Lower numbers indicate healthier reuse.</p>
+      </div>
+      <div class="score-metrics">
+        <div class="metric">
+          <span class="metric-label">Total Lines</span>
+          <span class="metric-value">{{score.totalLinesFormatted}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Duplicate Lines</span>
+          <span class="metric-value">{{score.duplicateLinesFormatted}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Duplicate Groups</span>
+          <span class="metric-value">{{score.duplicateGroupsFormatted}}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Similarity Threshold</span>
+          <span class="metric-value">{{thresholdPct}}%</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="groups"></div>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <span class="close" id="modal-close">✕</span>
+      <h3 id="modal-title"></h3>
+      <pre class="code"><code id="modal-code" class="language-plaintext hljs line-numbers"></code></pre>
+    </div>
+  </div>
+
+  <script id="dup-data" type="application/json">{{{duplicatesJson}}}</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlightjs-line-numbers.js/2.8.0/highlightjs-line-numbers.min.js"></script>
+  <script type="module">
+    const dataEl = document.getElementById('dup-data');
+    const modal = document.getElementById('modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalCode = document.getElementById('modal-code');
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeLabel = document.getElementById('theme-label');
+    const themeLink = document.getElementById('hljs-theme');
+    const groups = JSON.parse(dataEl.textContent || '[]');
+    const toast = (msg) => alert(msg);
+
+    const applyTheme = (next) => {
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('dryscan-theme', next);
+      themeLabel.textContent = next === 'light' ? 'Light' : 'Dark';
+      themeToggle.querySelector('.toggle-icon').textContent = next === 'light' ? '☀️' : '🌙';
+      themeLink.setAttribute('href', next === 'light'
+        ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css'
+        : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css');
+    };
+    const savedTheme = localStorage.getItem('dryscan-theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') applyTheme(savedTheme);
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+      applyTheme(current === 'light' ? 'dark' : 'light');
+      hljs.highlightAll();
+      document.querySelectorAll('code.hljs').forEach(el => hljs.lineNumbersBlock(el));
+    });
+
+    document.getElementById('modal-close').addEventListener('click', () => modal.classList.remove('active'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
+
+    const typeClass = (unitType) => {
+      if (unitType === 'class') return 'class';
+      if (unitType === 'block') return 'block';
+      return 'function';
+    };
+
+    const languageClass = (filePath) => {
+      const ext = (filePath.split('.').pop() || '').toLowerCase();
+      if (ext === 'java') return 'language-java';
+      return 'language-plaintext';
+    };
+
+    const container = document.getElementById('groups');
+
+    const render = () => {
+      container.innerHTML = '';
+      groups.forEach((group, idx) => {
+        container.appendChild(renderGroup(group, idx));
+      });
+      hljs.highlightAll();
+      document.querySelectorAll('code.hljs').forEach(el => hljs.lineNumbersBlock(el));
+    };
+
+      const regenerateReport = async () => {
+        const res = await fetch('/api/regenerate', { method: 'POST' });
+        if (!res.ok) {
+          const msg = (await res.json().catch(() => ({}))).error || 'Failed to regenerate report';
+          toast(msg);
+          return;
+        }
+        // Refresh the page to pick up the new report
+        window.location.reload();
+      };
+
+    const renderGroup = (group, idx) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const header = document.createElement('div');
+      header.className = 'row';
+      const title = document.createElement('div');
+      title.innerHTML = '<strong>Group ' + (idx + 1) + '</strong> · Similarity ' + (group.similarity * 100).toFixed(1) + '%';
+      header.appendChild(title);
+      header.appendChild(makePill(group.left.unitType));
+      if (group.shortId) {
+        const idTag = document.createElement('div');
+        idTag.className = 'muted';
+        idTag.textContent = 'ID ' + group.shortId;
+        header.appendChild(idTag);
+      }
+      card.appendChild(header);
+
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.appendChild(renderSide(group.left, 'Left', group.similarity));
+      grid.appendChild(renderSide(group.right, 'Right', group.similarity));
+      card.appendChild(grid);
+
+      const footer = document.createElement('div');
+      footer.className = 'row';
+      {{#if enableExclusions}}
+      const excludeBtn = document.createElement('button');
+      excludeBtn.className = 'btn secondary';
+      excludeBtn.textContent = 'Exclude this pair';
+      excludeBtn.dataset.action = 'exclude-pair';
+      excludeBtn.dataset.id = group.shortId || '';
+      excludeBtn.disabled = !group.shortId;
+      footer.appendChild(excludeBtn);
+      {{/if}}
+      if (group.exclusionString) {
+        const exclusionMeta = document.createElement('div');
+        exclusionMeta.className = 'muted';
+        exclusionMeta.textContent = 'Exclusion key: ' + group.exclusionString;
+        footer.appendChild(exclusionMeta);
+      }
+      card.appendChild(footer);
+      return card;
+    };
+
+    const renderSide = (side, label, similarity) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'side';
+
+      const row = document.createElement('div');
+      row.className = 'row';
+      const title = document.createElement('div');
+      title.innerHTML = '<strong>' + label + '</strong> · ' + side.name;
+      row.appendChild(title);
+      // row.appendChild(makePill(side.unitType));
+      wrap.appendChild(row);
+
+      const path = document.createElement('div');
+      path.className = 'path';
+      path.textContent = side.filePath + ':' + side.startLine + '-' + side.endLine;
+      wrap.appendChild(path);
+
+      const codeWrap = document.createElement('pre');
+      codeWrap.className = 'code';
+      const codeEl = document.createElement('code');
+      codeEl.className = languageClass(side.filePath) + ' hljs line-numbers';
+      codeEl.textContent = side.code;
+      codeWrap.appendChild(codeEl);
+      wrap.appendChild(codeWrap);
+
+      const actions = document.createElement('div');
+      actions.className = 'row';
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = 'View full file';
+      btn.dataset.action = 'view-file';
+      btn.dataset.path = side.filePath;
+      actions.appendChild(btn);
+      const meta = document.createElement('div');
+      meta.className = 'muted';
+      meta.textContent = 'Lines ' + side.startLine + '-' + side.endLine + ' · Similarity ' + (similarity * 100).toFixed(1) + '%';
+      actions.appendChild(meta);
+      wrap.appendChild(actions);
+
+      return wrap;
+    };
+
+    const makePill = (unitType) => {
+      const el = document.createElement('span');
+      el.className = 'pill type ' + typeClass(unitType);
+      el.textContent = unitType;
+      return el;
+    };
+
+    document.addEventListener('click', async (event) => {
+      const target = event.target;
+      if (target && target.dataset && target.dataset.action === 'view-file') {
+        const path = target.dataset.path;
+        try {
+          const res = await fetch('/api/file?path=' + encodeURIComponent(path));
+          if (!res.ok) {
+            modalTitle.textContent = 'Unable to load file';
+            modalCode.textContent = await res.text();
+            modalCode.className = 'language-plaintext hljs';
+            modal.classList.add('active');
+            return;
+          }
+          const data = await res.json();
+          modalTitle.textContent = data.path;
+          modalCode.textContent = data.content;
+          modalCode.className = languageClass(data.path) + ' hljs line-numbers';
+          modal.classList.add('active');
+          hljs.highlightElement(modalCode);
+          hljs.lineNumbersBlock(modalCode);
+        } catch (err) {
+          modalTitle.textContent = 'Network error';
+          modalCode.textContent = err?.message || 'Unable to fetch file content.';
+          modalCode.className = 'language-plaintext hljs';
+          modal.classList.add('active');
+        }
+      }
+      {{#if enableExclusions}}
+      if (target && target.dataset && target.dataset.action === 'exclude-pair') {
+        const id = target.dataset.id;
+        if (!id) {
+          toast('Missing duplicate id for exclusion.');
+          return;
+        }
+        target.disabled = true;
+        try {
+          const res = await fetch('/api/exclusions', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id }),
+          });
+          const body = await res.json();
+          if (!res.ok || body.error) {
+            throw new Error(body.error || 'Unable to add exclusion');
+          }
+          toast(body.status === 'already-present'
+            ? 'Exclusion already present: ' + body.exclusion
+            : 'Added exclusion: ' + body.exclusion);
+          await regenerateReport();
+        } catch (err) {
+          toast(err?.message || 'Unable to add exclusion');
+          target.disabled = false;
+        }
+      }
+      {{/if}}
+    });
+
+    {{#if enableExclusions}}
+    document.getElementById('regenerate-btn')?.addEventListener('click', async () => {
+      await regenerateReport();
+    });
+    {{/if}}
+
+    render();
+  </script>
+</body>
+</html>

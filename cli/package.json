@@ -30,7 +30,7 @@
     "url": "https://github.com/Goshenkata/DryScan.git"
   },
   "dependencies": {
-    "@goshenkata/dryscan-core": "^1.0.0",
+    "@goshenkata/dryscan-core": "^1.0.15",
     "commander": "^14.0.2",
     "handlebars": "^4.7.8"
   },
