@@ -900,7 +900,8 @@ var EmbeddingService = class {
     if (source.toLowerCase() === "huggingface") {
       log2("Using HuggingFace Inference with model: %s", HUGGINGFACE_MODEL);
       return new HuggingFaceInferenceEmbeddings({
-        model: HUGGINGFACE_MODEL
+        model: HUGGINGFACE_MODEL,
+        provider: "hf-inference"
       });
     }
     if (/^https?:\/\//i.test(source)) {

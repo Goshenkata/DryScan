@@ -53,6 +53,7 @@ export class EmbeddingService {
             log("Using HuggingFace Inference with model: %s", HUGGINGFACE_MODEL);
             return new HuggingFaceInferenceEmbeddings({
                 model: HUGGINGFACE_MODEL,
+                provider: "hf-inference",
             });
         }
 
