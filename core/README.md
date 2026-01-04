@@ -72,21 +72,20 @@ Place a `dryconfig.json` in your repository root:
   "threshold": 0.88,
   "minLines": 5,
   "minBlockLines": 8,
-  "embeddingModel": "embeddinggemma",
-  "embeddingSource": "http://localhost:11434",
+  "embeddingSource": "huggingface",
   "excludedPaths": ["**/test/**", "**/node_modules/**"],
   "excludedPairs": []
 }
 ```
 
 **Supported Embedding Providers:**
-- **Ollama** (default): Set `embeddingSource` to `"http://localhost:11434"` and `embeddingModel` to `"embeddinggemma"`
-- **Google Gemini**: Set `embeddingSource` to `"google"` and `embeddingModel` to `"gemini-embedding-001"` (requires `GOOGLE_API_KEY` env var)
+- **HuggingFace** (default): Set `embeddingSource` to `"huggingface"` (requires `HUGGINGFACEHUB_API_KEY` env var)
+- **Ollama** (local): Set `embeddingSource` to an Ollama URL like `"http://localhost:11434"`
 
 ## Requirements
 
 - Node.js >= 18.0.0
-- Ollama running locally (default) or Google API key for embeddings
+- HuggingFace API key (default) or Ollama running locally for embeddings
 
 ## Supported languages**
 

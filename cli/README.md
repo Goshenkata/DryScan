@@ -37,15 +37,14 @@ Create `dryconfig.json` in your repository root:
 {
   "threshold": 0.88,
   "minLines": 5,
-  "embeddingModel": "embeddinggemma",
-  "embeddingSource": "http://localhost:11434",
+  "embeddingSource": "huggingface",
   "excludedPaths": ["**/test/**"]
 }
 ```
 
 **Embedding Providers:**
-- Ollama (default): `"embeddingSource": "http://localhost:11434"`
-- Google Gemini: `"embeddingSource": "google"` (requires `GOOGLE_API_KEY` env var set)
+- HuggingFace (default): `"embeddingSource": "huggingface"` (requires `HUGGINGFACEHUB_API_KEY` env var)
+- Ollama (local): `"embeddingSource": "http://localhost:11434"`
 
 ## Supported languages**
 

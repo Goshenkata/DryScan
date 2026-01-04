@@ -42,7 +42,7 @@ dryscan update
 dryscan dupes <repo-path>
 ```
 
-Embeddings: set `embeddingSource` in `dryconfig.json` to `google` to use Gemini (requerest setting a GOOGLE_API_KEY env var), 
+Embeddings: set `embeddingSource` in `dryconfig.json` to `huggingface` to use HuggingFace Inference API (requires `HUGGINGFACEHUB_API_KEY` env var), 
 or provide an Ollama URL to use local embeddings;
 
 ## Project Roadmap / TODOs

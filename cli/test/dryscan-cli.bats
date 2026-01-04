@@ -44,25 +44,13 @@ wait_for_ui() {
 }
 
 embedding_source() {
-  if [[ -n "${GOOGLE_API_KEY:-}" ]]; then
-    echo "google"
-  else
-    echo "http://localhost:11434"
-  fi
-}
-
-embedding_model() {
-  if [[ -n "${GOOGLE_API_KEY:-}" ]]; then
-    echo "gemini-embedding-001"
-  else
-    echo "embeddinggemma"
-  fi
+  # Use HuggingFace by default for tests
+  echo "huggingface"
 }
 
 write_base_config() {
   cat > dryconfig.json <<EOF
 {
-  "embeddingModel": "$(embedding_model)",
   "embeddingSource": "$(embedding_source)"
 }
 EOF
@@ -246,7 +234,6 @@ EOF
   "minLines": 10,
   "minBlockLines": 6,
   "threshold": 0.99,
-  "embeddingModel": "$(embedding_model)",
   "embeddingSource": "$(embedding_source)"
 }
 EOF
@@ -276,7 +263,6 @@ EOF
   "minLines": 3,
   "minBlockLines": 5,
   "threshold": 0.85,
-  "embeddingModel": "$(embedding_model)",
   "embeddingSource": "$(embedding_source)"
 }
 EOF
@@ -387,7 +373,6 @@ EOF
   cat > dryconfig.json <<EOF
 {
   "contextLength": 32,
-  "embeddingModel": "$(embedding_model)",
   "embeddingSource": "$(embedding_source)"
 }
 EOF
@@ -429,7 +414,6 @@ EOF
 {
   "minLines": 0,
   "minBlockLines": 0,
-  "embeddingModel": "$(embedding_model)",
   "embeddingSource": "$(embedding_source)"
 }
 EOF

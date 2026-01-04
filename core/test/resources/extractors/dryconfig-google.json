@@ -4,7 +4,6 @@
   "minLines": 0,
   "minBlockLines": 0,
   "threshold": 0.88,
-  "embeddingModel": "gemini-embedding-001",
-  "embeddingSource": "google",
+  "embeddingSource": "huggingface",
   "contextLength": 2048
 }

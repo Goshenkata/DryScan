@@ -12,7 +12,6 @@ export const DEFAULT_CONFIG: DryConfig = {
   minLines: 3,
   minBlockLines: 5,
   threshold: 0.88,
-  embeddingModel: "embeddinggemma",
   embeddingSource: "http://localhost:11434",
   contextLength: 2048,
 };
@@ -27,7 +26,6 @@ const partialConfigSchema: Schema = {
     minLines: { type: "number" },
     minBlockLines: { type: "number" },
     threshold: { type: "number" },
-    embeddingModel: { type: "string" },
     embeddingSource: { type: "string" },
     contextLength: { type: "number" },
   },
@@ -41,7 +39,7 @@ const fullConfigSchema: Schema = {
     "minLines",
     "minBlockLines",
     "threshold",
-    "embeddingModel",
+    "embeddingSource",
     "contextLength",
   ],
 };

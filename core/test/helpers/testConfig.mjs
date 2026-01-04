@@ -2,16 +2,13 @@ import fs from "fs/promises";
 import path from "path";
 import { DEFAULT_CONFIG } from "../../src/config/dryconfig.ts";
 
+/**
+ * Returns embedding config for tests.
+ * Uses HuggingFace by default (via DEFAULT_CONFIG).
+ */
 function baseEmbeddingConfig() {
-  if (process.env.GOOGLE_API_KEY) {
-    return {
-      embeddingSource: "google",
-      embeddingModel: "gemini-embedding-001",
-    };
-  }
   return {
     embeddingSource: DEFAULT_CONFIG.embeddingSource,
-    embeddingModel: DEFAULT_CONFIG.embeddingModel,
   };
 }
 

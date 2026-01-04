@@ -6,7 +6,6 @@
   "minLines": 3,
   "minBlockLines": 5,
   "threshold": 0.88,
-  "embeddingModel": "embeddinggemma",
-  "embeddingSource": "http://localhost:11434",
+  "embeddingSource": "huggingface",
   "contextLength": 2048
 }
