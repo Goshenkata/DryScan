@@ -62,7 +62,7 @@ var DEFAULT_CONFIG = {
   minLines: 3,
   minBlockLines: 5,
   threshold: 0.88,
-  embeddingSource: "huggingface",
+  embeddingSource: "http://localhost:11434",
   contextLength: 2048
 };
 var validator = new Validator();
