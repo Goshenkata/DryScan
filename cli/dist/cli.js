@@ -2,13 +2,22 @@
 import { Command } from 'commander';
 import { DryScan, configStore, } from '@goshenkata/dryscan-core';
 import { resolve } from 'path';
+import { createRequire } from 'module';
 import { handleDupesCommand } from './dupes.js';
 import { applyExclusionFromLatestReport } from './reports.js';
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
 const program = new Command();
 program
     .name('dryscan')
     .description('Semantic code duplication analyzer')
-    .version('0.1.0');
+    .version(version)
+    .option('--debug', 'Enable debug logs from the DryScan core library')
+    .hook('preAction', () => {
+    if (program.opts().debug) {
+        process.env.DEBUG = (process.env.DEBUG ? process.env.DEBUG + ',DryScan:*' : 'DryScan:*');
+    }
+});
 program
     .command('init')
     .description('Initialize DryScan in the current repository')
