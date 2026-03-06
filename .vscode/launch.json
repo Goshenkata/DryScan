@@ -54,7 +54,7 @@
       "program": "${workspaceFolder}/cli/src/cli.ts",
       "args": [
         "init",
-        "./test-java-project"
+        "/home/goshenkata/Projects/DryScanDiplomna/datasets/Java/Stand Alone Clones"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",

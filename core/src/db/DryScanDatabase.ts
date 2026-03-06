@@ -38,7 +38,11 @@ export class DryScanDatabase {
   async saveUnits(units: IndexUnit | IndexUnit[]): Promise<void> {
     if (!this.unitRepository) throw new Error("Database not initialized");
     const payload = Array.isArray(units) ? units : [units];
-    await this.unitRepository.save(payload);
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < payload.length; i += BATCH_SIZE) {
+      console.debug(`[DryScanDatabase] Saving units ${i + 1}-${Math.min(i + BATCH_SIZE, payload.length)} of ${payload.length}...`);
+      await this.unitRepository.save(payload.slice(i, i + BATCH_SIZE));
+    }
   }
 
   async getUnit(id: string): Promise<IndexUnit | null> {
