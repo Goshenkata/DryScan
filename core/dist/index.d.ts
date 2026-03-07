@@ -244,7 +244,6 @@ declare class DryScan {
     }>;
     private ensureDatabase;
     private loadConfig;
-    private isInitialized;
 }
 
 declare class ConfigStore {

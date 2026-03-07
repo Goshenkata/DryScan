@@ -26,7 +26,7 @@ teardown() {
 }
 
 run_dryscan() {
-  run node "${CLI_BIN}" "$@"
+  run node "${CLI_BIN}" --debug "$@"
 }
 
 sqlite_query() {
@@ -45,7 +45,7 @@ wait_for_ui() {
 
 embedding_source() {
   # Use HuggingFace by default for tests
-  echo "huggingface"
+  echo "ollama"
 }
 
 write_base_config() {

@@ -863,8 +863,8 @@ import debug2 from "debug";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
 var log2 = debug2("DryScan:EmbeddingService");
-var OLLAMA_MODEL = "embeddinggemma";
-var HUGGINGFACE_MODEL = "google/embeddinggemma-300m";
+var OLLAMA_MODEL = "qwen3-embedding:0.6b";
+var HUGGINGFACE_MODEL = "Qwen/Qwen3-Embedding-0.6B";
 var EmbeddingService = class {
   constructor(repoPath) {
     this.repoPath = repoPath;
@@ -908,16 +908,23 @@ var EmbeddingService = class {
         provider: "hf-inference"
       });
     }
-    if (/^https?:\/\//i.test(source)) {
-      log2("Using Ollama at %s with model: %s", source, OLLAMA_MODEL);
-      return new OllamaEmbeddings({
-        model: OLLAMA_MODEL,
-        baseUrl: source
-      });
+    const ollamaBaseUrl = this.resolveOllamaBaseUrl(source);
+    if (ollamaBaseUrl !== null) {
+      log2("Using Ollama%s with model: %s", ollamaBaseUrl ? ` at ${ollamaBaseUrl}` : "", OLLAMA_MODEL);
+      return new OllamaEmbeddings({ model: OLLAMA_MODEL, ...ollamaBaseUrl && { baseUrl: ollamaBaseUrl } });
     }
     const message = `Unsupported embedding source: ${source || "(empty)"}. Use "huggingface" or an Ollama URL.`;
     log2(message);
     throw new Error(message);
+  }
+  /**
+   * Returns the Ollama base URL if source is an HTTP URL, undefined if source is "ollama" (use default),
+   * or null if source is not an Ollama provider at all.
+   */
+  resolveOllamaBaseUrl(source) {
+    if (/^https?:\/\//i.test(source)) return source;
+    if (source.toLowerCase() === "ollama") return void 0;
+    return null;
   }
 };
 
@@ -1632,6 +1639,7 @@ var PairingService = class {
 };
 
 // src/DryScan.ts
+import { existsSync } from "fs";
 var DryScan = class {
   repoPath;
   extractor;
@@ -1664,13 +1672,15 @@ var DryScan = class {
    */
   async init(options) {
     console.log(`[DryScan] Initializing repository at ${this.repoPath}`);
+    const dryDir = upath6.join(this.repoPath, DRYSCAN_DIR);
+    if (existsSync(dryDir)) {
+      console.warn(`[DryScan] Warning: a '.dry' folder already exists at ${dryDir}.`);
+      console.warn("[DryScan] The repository may already be initialized. Run 'dryscan clean' to remove stale data before re-initializing.");
+      return;
+    }
     console.log("[DryScan] Preparing database and cache...");
     await configStore.init(this.repoPath);
     await this.ensureDatabase();
-    if (await this.isInitialized()) {
-      console.log("[DryScan] Repository already initialized; skipping full init.");
-      return;
-    }
     console.log("[DryScan] Starting initial scan (may take a moment)...");
     await this.services.initializer.init(options);
     console.log("[DryScan] Initial scan complete.");
@@ -1751,13 +1761,6 @@ var DryScan = class {
   }
   async loadConfig() {
     return configStore.get(this.repoPath);
-  }
-  async isInitialized() {
-    if (!this.db.isInitialized()) return false;
-    const unitCount = await this.db.countUnits();
-    const initialized = unitCount > 0;
-    console.log(`[DryScan] Initialization check: ${unitCount} indexed units`);
-    return initialized;
   }
 };
 export {

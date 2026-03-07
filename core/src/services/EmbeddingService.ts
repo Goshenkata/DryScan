@@ -7,8 +7,8 @@ import { configStore } from "../config/configStore";
 const log = debug("DryScan:EmbeddingService");
 
 // Model names for each provider
-const OLLAMA_MODEL = "embeddinggemma";
-const HUGGINGFACE_MODEL = "google/embeddinggemma-300m";
+const OLLAMA_MODEL = "qwen3-embedding:0.6b";
+const HUGGINGFACE_MODEL = "Qwen/Qwen3-Embedding-0.6B";
 
 export class EmbeddingService {
     constructor(private readonly repoPath: string) { }
@@ -57,17 +57,25 @@ export class EmbeddingService {
             });
         }
 
-        // Ollama (local or remote URL)
-        if (/^https?:\/\//i.test(source)) {
-            log("Using Ollama at %s with model: %s", source, OLLAMA_MODEL);
-            return new OllamaEmbeddings({
-                model: OLLAMA_MODEL,
-                baseUrl: source,
-            });
+        // Ollama keyword or direct URL
+        const ollamaBaseUrl = this.resolveOllamaBaseUrl(source);
+        if (ollamaBaseUrl !== null) {
+            log("Using Ollama%s with model: %s", ollamaBaseUrl ? ` at ${ollamaBaseUrl}` : "", OLLAMA_MODEL);
+            return new OllamaEmbeddings({ model: OLLAMA_MODEL, ...(ollamaBaseUrl && { baseUrl: ollamaBaseUrl }) });
         }
 
         const message = `Unsupported embedding source: ${source || "(empty)"}. Use "huggingface" or an Ollama URL.`;
         log(message);
         throw new Error(message);
+    }
+
+    /**
+     * Returns the Ollama base URL if source is an HTTP URL, undefined if source is "ollama" (use default),
+     * or null if source is not an Ollama provider at all.
+     */
+    private resolveOllamaBaseUrl(source: string): string | undefined | null {
+        if (/^https?:\/\//i.test(source)) return source;
+        if (source.toLowerCase() === "ollama") return undefined;
+        return null;
     }
 }
