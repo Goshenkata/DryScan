@@ -12,6 +12,7 @@ import { DryScanServiceDeps } from "./services/types";
 import { configStore } from "./config/configStore";
 import { DryConfig } from "./types";
 import { PairingService } from "./services/PairingService";
+import { existsSync } from "fs";
 
 export type InitOptions = InitServiceOptions;
 
@@ -61,13 +62,17 @@ export class DryScan {
    */
   async init(options?: InitOptions): Promise<void> {
     console.log(`[DryScan] Initializing repository at ${this.repoPath}`);
+
+    const dryDir = upath.join(this.repoPath, DRYSCAN_DIR);
+    if (existsSync(dryDir)) {
+      console.warn(`[DryScan] Warning: a '.dry' folder already exists at ${dryDir}.`);
+      console.warn("[DryScan] The repository may already be initialized. Run 'dryscan clean' to remove stale data before re-initializing.");
+      return;
+    }
+
     console.log("[DryScan] Preparing database and cache...");
     await configStore.init(this.repoPath);
     await this.ensureDatabase();
-    if (await this.isInitialized()) {
-      console.log("[DryScan] Repository already initialized; skipping full init.");
-      return;
-    }
     console.log("[DryScan] Starting initial scan (may take a moment)...");
     await this.services.initializer.init(options);
     console.log("[DryScan] Initial scan complete.");
@@ -160,11 +165,4 @@ export class DryScan {
     return configStore.get(this.repoPath);
   }
 
-  private async isInitialized(): Promise<boolean> {
-    if (!this.db.isInitialized()) return false;
-    const unitCount = await this.db.countUnits();
-    const initialized = unitCount > 0;
-    console.log(`[DryScan] Initialization check: ${unitCount} indexed units`);
-    return initialized;
-  }
 }

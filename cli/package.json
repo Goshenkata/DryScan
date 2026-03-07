@@ -12,7 +12,7 @@
     "clean": "rm -rf dist",
     "test": "npm run test:unit && npm run test:bats",
     "test:unit": "tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\"",
-    "test:bats": "npm run build && bats test/dryscan-cli.bats",
+    "test:bats": "npm run build && bats --print-output-on-failure test/dryscan-cli.bats",
     "coverage": "c8 tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\""
   },
   "engines": {
