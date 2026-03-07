@@ -65,11 +65,8 @@ export class DryScan {
 
     const dryDir = upath.join(this.repoPath, DRYSCAN_DIR);
     if (existsSync(dryDir)) {
-      console.warn(`[DryScan] Warning: a '.dry' folder already exists at ${dryDir}. Removing..`);
-      await fs.rm(dryDir, { recursive: true, force: true });
-      return;
+      console.warn(`[DryScan] Warning: a '.dry' folder already exists at ${dryDir}.`);
     }
-
     console.log("[DryScan] Preparing database and cache...");
     await configStore.init(this.repoPath);
     await this.ensureDatabase();

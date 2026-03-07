@@ -94,7 +94,8 @@ export class JavaExtractor implements LanguageExtractor {
 
     visit(tree.rootNode);
 
-    return units;
+    //remove duplicates if any
+    return this.removeDuplicates(units);
   }
 
   unitLabel(unit: IndexUnit): string | null {
@@ -332,4 +333,9 @@ export class JavaExtractor implements LanguageExtractor {
     const withoutBlockComments = code.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n\r]/g, ""));
     return withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
   }
+
+private removeDuplicates(units: IndexUnit[]): IndexUnit[] | PromiseLike<IndexUnit[]> {
+  return Array.from(new Map(units.map(u => [u.id, u])).values());
 }
+}
+

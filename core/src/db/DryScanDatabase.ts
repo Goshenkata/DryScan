@@ -41,7 +41,8 @@ export class DryScanDatabase {
     const BATCH_SIZE = 500;
     for (let i = 0; i < payload.length; i += BATCH_SIZE) {
       console.debug(`[DryScanDatabase] Saving units ${i + 1}-${Math.min(i + BATCH_SIZE, payload.length)} of ${payload.length}...`);
-      await this.unitRepository.save(payload.slice(i, i + BATCH_SIZE));
+      const batch = payload.slice(i, i + BATCH_SIZE);
+      await this.unitRepository.save(batch);
     }
   }
 

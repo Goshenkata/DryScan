@@ -260,7 +260,7 @@ var JavaExtractor = class {
       }
     };
     visit(tree.rootNode);
-    return units;
+    return this.removeDuplicates(units);
   }
   unitLabel(unit) {
     if (unit.unitType === "class" /* CLASS */) return unit.filePath;
@@ -446,6 +446,9 @@ var JavaExtractor = class {
   stripComments(code) {
     const withoutBlockComments = code.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n\r]/g, ""));
     return withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
+  }
+  removeDuplicates(units) {
+    return Array.from(new Map(units.map((u) => [u.id, u])).values());
   }
 };
 
@@ -776,7 +779,8 @@ var DryScanDatabase = class {
     const BATCH_SIZE = 500;
     for (let i = 0; i < payload.length; i += BATCH_SIZE) {
       console.debug(`[DryScanDatabase] Saving units ${i + 1}-${Math.min(i + BATCH_SIZE, payload.length)} of ${payload.length}...`);
-      await this.unitRepository.save(payload.slice(i, i + BATCH_SIZE));
+      const batch = payload.slice(i, i + BATCH_SIZE);
+      await this.unitRepository.save(batch);
     }
   }
   async getUnit(id) {
@@ -1675,8 +1679,6 @@ var DryScan = class {
     const dryDir = upath6.join(this.repoPath, DRYSCAN_DIR);
     if (existsSync(dryDir)) {
       console.warn(`[DryScan] Warning: a '.dry' folder already exists at ${dryDir}.`);
-      console.warn("[DryScan] The repository may already be initialized. Run 'dryscan clean' to remove stale data before re-initializing.");
-      return;
     }
     console.log("[DryScan] Preparing database and cache...");
     await configStore.init(this.repoPath);
