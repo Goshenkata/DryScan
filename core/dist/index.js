@@ -368,6 +368,7 @@ var JavaExtractor = class {
       filePath: file,
       startLine,
       endLine,
+      children: [],
       code: this.stripComments(source.slice(node.startIndex, node.endIndex)),
       unitType: "function" /* FUNCTION */,
       parentId: parentClass?.id,
@@ -402,9 +403,11 @@ var JavaExtractor = class {
             parentId: parentFunction.id,
             parent: parentFunction
           };
+          const contextLength = this.config?.contextLength ?? 2048;
+          const splitBlocks = this.textSplitBlockIfOverContextLimit(blockUnit, contextLength);
           parentFunction.children = parentFunction.children || [];
-          parentFunction.children.push(blockUnit);
-          blocks.push(blockUnit);
+          parentFunction.children.push(...splitBlocks);
+          blocks.push(...splitBlocks);
         }
       }
       for (let i = 0; i < n.namedChildCount; i++) {
@@ -449,6 +452,21 @@ var JavaExtractor = class {
   }
   removeDuplicates(units) {
     return Array.from(new Map(units.map((u) => [u.id, u])).values());
+  }
+  /** Splits a block unit's code into chunks if it exceeds the context length limit. */
+  textSplitBlockIfOverContextLimit(unit, contextLength) {
+    if (unit.code.length <= contextLength) return [unit];
+    const chunks = [];
+    let chunkIndex = 0;
+    for (let i = 0; i < unit.code.length; i += contextLength) {
+      chunks.push({
+        ...unit,
+        id: `${unit.id}:chunk${chunkIndex}`,
+        code: unit.code.slice(i, i + contextLength)
+      });
+      chunkIndex++;
+    }
+    return chunks;
   }
 };
 

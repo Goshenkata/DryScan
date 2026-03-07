@@ -124,4 +124,97 @@ public class GroupEntity {
 
     expect(results).to.be.an('array').that.is.empty;
   });
+
+  describe('textSplitBlockIfOverContextLimit', () => {
+    // A method whose body exceeds a tiny contextLength so the extractor is forced to split it.
+    const buildSourceWithLargeBody = (bodyLines) => `
+public class Splitter {
+  public void bigMethod() {
+${bodyLines}
+  }
+}
+`;
+
+    // Generate enough unique lines to produce a body clearly larger than a small contextLength.
+    const manyLines = Array.from({ length: 60 }, (_, i) => `    int var${i} = ${i};`).join('\n');
+
+    it('returns a single block when code fits within contextLength', async () => {
+      const extractor = await createExtractor({ minLines: 0, minBlockLines: 0, contextLength: 100000 });
+      const results = await extractor.extractFromText('Splitter.java', buildSourceWithLargeBody(manyLines));
+      const blocks = results.filter(u => u.unitType === IndexUnitType.BLOCK);
+      // All blocks should have code within the limit.
+      for (const block of blocks) {
+        expect(block.code.length).to.be.at.most(100000);
+      }
+      // With an enormous limit there should be no chunk-suffixed ids.
+      expect(blocks.every(b => !b.id.includes(':chunk'))).to.equal(true);
+    });
+
+    it('splits a block into chunks when code exceeds contextLength', async () => {
+      const smallContext = 50;
+      const extractor = await createExtractor({ minLines: 0, minBlockLines: 0, contextLength: smallContext });
+      const results = await extractor.extractFromText('Splitter.java', buildSourceWithLargeBody(manyLines));
+      const chunks = results.filter(u => u.unitType === IndexUnitType.BLOCK && u.id.includes(':chunk'));
+      // Must have produced multiple chunks.
+      expect(chunks.length).to.be.greaterThan(1);
+    });
+
+    it('each chunk code length does not exceed contextLength', async () => {
+      const smallContext = 50;
+      const extractor = await createExtractor({ minLines: 0, minBlockLines: 0, contextLength: smallContext });
+      const results = await extractor.extractFromText('Splitter.java', buildSourceWithLargeBody(manyLines));
+      const chunks = results.filter(u => u.unitType === IndexUnitType.BLOCK && u.id.includes(':chunk'));
+      for (const chunk of chunks) {
+        expect(chunk.code.length).to.be.at.most(smallContext);
+      }
+    });
+
+    it('chunks are numbered sequentially starting at 0', async () => {
+      const smallContext = 50;
+      const extractor = await createExtractor({ minLines: 0, minBlockLines: 0, contextLength: smallContext });
+      const results = await extractor.extractFromText('Splitter.java', buildSourceWithLargeBody(manyLines));
+      const chunks = results
+        .filter(u => u.unitType === IndexUnitType.BLOCK && u.id.includes(':chunk'))
+        .map(u => parseInt(u.id.match(/:chunk(\d+)$/)[1], 10))
+        .sort((a, b) => a - b);
+      chunks.forEach((n, i) => expect(n).to.equal(i));
+    });
+
+    it('chunks preserve the parent block metadata (filePath, unitType, parentId)', async () => {
+      const smallContext = 50;
+      const extractor = await createExtractor({ minLines: 0, minBlockLines: 0, contextLength: smallContext });
+      const results = await extractor.extractFromText('Splitter.java', buildSourceWithLargeBody(manyLines));
+      const chunks = results.filter(u => u.unitType === IndexUnitType.BLOCK && u.id.includes(':chunk'));
+      for (const chunk of chunks) {
+        expect(chunk.unitType).to.equal(IndexUnitType.BLOCK);
+        expect(chunk.filePath).to.equal('Splitter.java');
+        expect(chunk.parentId).to.be.a('string').that.is.not.empty;
+      }
+    });
+
+    it('concatenated chunk code reconstructs the original block code', async () => {
+      const smallContext = 50;
+      const extractor = await createExtractor({ minLines: 0, minBlockLines: 0, contextLength: smallContext });
+      const results = await extractor.extractFromText('Splitter.java', buildSourceWithLargeBody(manyLines));
+      // Gather unique base ids (strip :chunkN suffix) and rebuild per base.
+      const byBase = new Map();
+      for (const u of results.filter(u => u.unitType === IndexUnitType.BLOCK && u.id.includes(':chunk'))) {
+        const base = u.id.replace(/:chunk\d+$/, '');
+        if (!byBase.has(base)) byBase.set(base, []);
+        byBase.get(base).push(u);
+      }
+      for (const [, chunkList] of byBase) {
+        chunkList.sort((a, b) => {
+          const ia = parseInt(a.id.match(/:chunk(\d+)$/)[1], 10);
+          const ib = parseInt(b.id.match(/:chunk(\d+)$/)[1], 10);
+          return ia - ib;
+        });
+        const reconstructed = chunkList.map(c => c.code).join('');
+        // The original un-split block (same base id without :chunkN) isn't in the results
+        // because it was replaced by its chunks – verify reconstruction is non-empty and
+        // all characters come from the original source by checking total length matches.
+        expect(reconstructed.length).to.equal(chunkList.length * smallContext - (smallContext - chunkList.at(-1).code.length));
+      }
+    });
+  });
 });

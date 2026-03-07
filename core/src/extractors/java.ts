@@ -233,6 +233,7 @@ export class JavaExtractor implements LanguageExtractor {
       filePath: file,
       startLine,
       endLine,
+      children: [],
       code: this.stripComments(source.slice(node.startIndex, node.endIndex)),
       unitType: IndexUnitType.FUNCTION,
       parentId: parentClass?.id,
@@ -274,9 +275,11 @@ export class JavaExtractor implements LanguageExtractor {
             parentId: parentFunction.id,
             parent: parentFunction,
           };
+          const contextLength = this.config?.contextLength ?? 2048;
+          const splitBlocks = this.textSplitBlockIfOverContextLimit(blockUnit, contextLength);
           parentFunction.children = parentFunction.children || [];
-          parentFunction.children.push(blockUnit);
-          blocks.push(blockUnit);
+          parentFunction.children.push(...splitBlocks);
+          blocks.push(...splitBlocks);
         }
       }
 
@@ -334,8 +337,25 @@ export class JavaExtractor implements LanguageExtractor {
     return withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
   }
 
-private removeDuplicates(units: IndexUnit[]): IndexUnit[] | PromiseLike<IndexUnit[]> {
-  return Array.from(new Map(units.map(u => [u.id, u])).values());
-}
+  private removeDuplicates(units: IndexUnit[]): IndexUnit[] | PromiseLike<IndexUnit[]> {
+    return Array.from(new Map(units.map(u => [u.id, u])).values());
+  }
+
+  /** Splits a block unit's code into chunks if it exceeds the context length limit. */
+  private textSplitBlockIfOverContextLimit(unit: IndexUnit, contextLength: number): IndexUnit[] {
+    if (unit.code.length <= contextLength) return [unit];
+
+    const chunks: IndexUnit[] = [];
+    let chunkIndex = 0;
+    for (let i = 0; i < unit.code.length; i += contextLength) {
+      chunks.push({
+        ...unit,
+        id: `${unit.id}:chunk${chunkIndex}`,
+        code: unit.code.slice(i, i + contextLength),
+      });
+      chunkIndex++;
+    }
+    return chunks;
+  }
 }
 

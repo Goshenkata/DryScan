@@ -4,8 +4,8 @@
   ],
   "excludedPairs": [],
   "minLines": 0,
-  "minBlockLines": 5,
+  "minBlockLines": 0,
   "threshold": 0.88,
   "embeddingSource": "http://localhost:11434",
-  "contextLength": 2048
+  "contextLength": 50
 }

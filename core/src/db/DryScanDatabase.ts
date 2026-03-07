@@ -48,7 +48,7 @@ export class DryScanDatabase {
 
   async getUnit(id: string): Promise<IndexUnit | null> {
     if (!this.unitRepository) throw new Error("Database not initialized");
-    return this.unitRepository.findOne({ 
+    return this.unitRepository.findOne({
       where: { id },
       relations: ["children", "parent"]
     });
