@@ -1255,19 +1255,25 @@ var DuplicateService = class {
   }
   config;
   cache = DuplicationCache.getInstance();
+  //todo vetter optimisation
   async findDuplicates(config) {
     this.config = config;
+    const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
+    log5("Starting duplicate analysis on %d units", allUnits.length);
     if (allUnits.length < 2) {
+      log5("Not enough units to compare, returning empty result");
       const score2 = this.computeDuplicationScore([], allUnits);
       return { duplicates: [], score: score2 };
     }
     const thresholds = this.resolveThresholds(config.threshold);
+    log5("Resolved thresholds: function=%d, block=%d, class=%d", thresholds.function, thresholds.block, thresholds.class);
     const duplicates = this.computeDuplicates(allUnits, thresholds);
     const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
-    log5("Found %d duplicate groups", filteredDuplicates.length);
+    log5("Found %d duplicate groups (%d excluded)", filteredDuplicates.length, duplicates.length - filteredDuplicates.length);
     this.cache.update(filteredDuplicates).catch((err) => log5("Cache update failed: %O", err));
     const score = this.computeDuplicationScore(filteredDuplicates, allUnits);
+    log5("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
     return { duplicates: filteredDuplicates, score };
   }
   resolveThresholds(functionThreshold) {
@@ -1291,25 +1297,37 @@ var DuplicateService = class {
       list.push(unit);
       byType.set(unit.unitType, list);
     }
+    const t0 = performance.now();
     for (const [type, typedUnits] of byType.entries()) {
       const threshold = this.getThreshold(type, thresholds);
+      log5("Comparing %d units of type '%s' with threshold %d", typedUnits.length, type, threshold);
+      const typeStart = performance.now();
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
           const left = typedUnits[i];
           const right = typedUnits[j];
-          if (this.shouldSkipComparison(left, right)) continue;
+          if (this.shouldSkipComparison(left, right)) {
+            log5("Skipping nested block comparison: '%s' and '%s'", left.name, right.name);
+            continue;
+          }
           const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
           let similarity = null;
           if (cached !== null) {
+            log5("Cache hit for '%s' <-> '%s': similarity=%d", left.name, right.name, cached);
             similarity = cached;
           } else {
-            if (!left.embedding || !right.embedding) continue;
+            if (!left.embedding || !right.embedding) {
+              log5("Skipping '%s' <-> '%s': missing embedding", left.name, right.name);
+              continue;
+            }
             similarity = this.computeWeightedSimilarity(left, right);
+            log5("Computed similarity for '%s' <-> '%s': %d", left.name, right.name, similarity);
           }
           if (similarity === null) continue;
           if (similarity >= threshold) {
             const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
             if (!exclusionString) continue;
+            log5("Duplicate found: '%s' <-> '%s' (similarity=%d)", left.name, right.name, similarity);
             duplicates.push({
               id: `${left.id}::${right.id}`,
               similarity,
@@ -1337,7 +1355,9 @@ var DuplicateService = class {
           }
         }
       }
+      log5("Type '%s' comparisons completed in %dms", type, (performance.now() - typeStart).toFixed(2));
     }
+    log5("computeDuplicates completed in %dms, found %d raw duplicates", (performance.now() - t0).toFixed(2), duplicates.length);
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
   isGroupExcluded(group) {
