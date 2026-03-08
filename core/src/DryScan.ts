@@ -89,14 +89,15 @@ export class DryScan {
    * 6. Recompute embeddings for affected units
    * 7. Update file tracking metadata
    */
-  async updateIndex(): Promise<void> {
+  async updateIndex(): Promise<string[]> {
     console.log(`[DryScan] Updating index at ${this.repoPath}...`);
     console.log("[DryScan] Checking for file changes...");
     const start = Date.now();
     await this.ensureDatabase();
-    await this.services.updater.updateIndex();
+    const dirtyPaths = await this.services.updater.updateIndex();
     const duration = Date.now() - start;
     console.log(`[DryScan] Index update complete. Took ${duration}ms.`);
+    return dirtyPaths;
   }
 
 
@@ -129,13 +130,13 @@ export class DryScan {
 
     console.log("[DryScan] Updating index...");
     const updateStart = Date.now();
-    await this.updateIndex();
+    const dirtyPaths = await this.updateIndex();
     const updateDuration = Date.now() - updateStart;
     console.log(`[DryScan] Index update  took ${updateDuration}ms.`);
 
     console.log("[DryScan] Detecting duplicates...");
     const dupStart = Date.now();
-    const result = await this.services.duplicate.findDuplicates(config);
+    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths);
     const dupDuration = Date.now() - dupStart;
     console.log(`[DryScan] Duplicate detection took ${dupDuration}ms.`);
 

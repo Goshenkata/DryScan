@@ -12,14 +12,17 @@ export class UpdateService {
     private readonly exclusionService: ExclusionService
   ) {}
 
-  async updateIndex(): Promise<void> {
+  /** Returns the list of file paths that were modified or deleted (dirty). */
+  async updateIndex(): Promise<string[]> {
     const extractor = this.deps.extractor;
     const cache = DuplicationCache.getInstance();
 
     try {
       const changeSet = await performIncrementalUpdate(this.deps.repoPath, extractor, this.deps.db);
       await this.exclusionService.cleanupExcludedFiles();
-      await cache.invalidate([...changeSet.changed, ...changeSet.deleted]);
+      const dirtyPaths = [...changeSet.changed, ...changeSet.deleted, ...changeSet.added];
+      await cache.invalidate(dirtyPaths);
+      return dirtyPaths;
     } catch (err) {
       log("Error during index update:", err);
       throw err;

@@ -1,5 +1,8 @@
 import { expect } from "chai";
+import sinon from "sinon";
+import debugLib from "debug";
 import { DryScan } from "../src/DryScan.ts";
+import { DuplicationCache } from "../src/services/DuplicationCache.ts";
 import { IndexUnitType } from "../src/types.ts";
 import { configStore } from "../src/config/configStore.ts";
 import { buildTestConfig } from "./helpers/testConfig.mjs";
@@ -42,6 +45,7 @@ describe("DryScan - Duplicate Detection", function() {
 
   afterEach(async () => {
     // Clean up
+    DuplicationCache.getInstance().clear();
     await fs.rm(testDir, { recursive: true, force: true });
   });
 
@@ -181,6 +185,34 @@ describe("DryScan - Duplicate Detection", function() {
 
       // Identical 3-line functions produce a 50% duplication score -> Critical grade
       expect(report.grade).to.equal("Critical");
+    });
+
+    it("reuses similarity matrix across calls when no paths are dirty", async () => {
+      const units = [
+        makeUnit("1", "fn1", [1, 0]),
+        makeUnit("2", "fn2", [1, 0]),
+      ];
+      const scanner = await stubbedScanner(units, { threshold: 0.7 });
+
+      // First call: full rebuild.
+      scanner.updateIndex = async () => ["fn1.js"];
+      const first = await scanner.buildDuplicateReport();
+      expect(first.duplicates.length).to.be.at.least(1);
+
+      // Second call: enable debug output, stub stderr, assert "Matrix reused" log.
+      debugLib.enable("DryScan:DuplicationCache");
+      const stderrStub = sinon.stub(process.stderr, "write");
+      try {
+        scanner.updateIndex = async () => [];
+        const second = await scanner.buildDuplicateReport();
+        expect(second.duplicates.length).to.equal(first.duplicates.length);
+
+        const output = stderrStub.args.map(([chunk]) => chunk.toString()).join("");
+        expect(output).to.include("Matrix reused");
+      } finally {
+        stderrStub.restore();
+        debugLib.disable();
+      }
     });
 
     it("skips comparisons for nested blocks in same file", async () => {

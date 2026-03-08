@@ -221,7 +221,7 @@ declare class DryScan {
      * 6. Recompute embeddings for affected units
      * 7. Update file tracking metadata
      */
-    updateIndex(): Promise<void>;
+    updateIndex(): Promise<string[]>;
     /**
      * Runs duplicate detection and returns a normalized report payload ready for persistence or display.
      */

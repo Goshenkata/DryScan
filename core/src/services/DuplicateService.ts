@@ -14,7 +14,12 @@ export class DuplicateService {
 
   constructor(private readonly deps: DryScanServiceDeps) {}
 
-  async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
+  /**
+   * @param dirtyPaths - File paths changed since last run. When provided, only
+   *   dirty×all similarities are recomputed; clean×clean values are reused from
+   *   the existing matrix.  Pass undefined (or omit) for a full rebuild.
+   */
+  async findDuplicates(config: DryConfig, dirtyPaths?: string[]): Promise<DuplicateAnalysisResult> {
     this.config = config;
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
@@ -25,7 +30,7 @@ export class DuplicateService {
     }
 
     const thresholds = this.resolveThresholds(config.threshold);
-    const duplicates = this.computeDuplicates(allUnits, thresholds);
+    const duplicates = this.computeDuplicates(allUnits, thresholds, dirtyPaths);
     const filtered = duplicates.filter((g) => !this.isGroupExcluded(g));
     log("Found %d duplicate groups (%d excluded)", filtered.length, duplicates.length - filtered.length);
 
@@ -49,10 +54,11 @@ export class DuplicateService {
 
   private computeDuplicates(
     units: IndexUnit[],
-    thresholds: { function: number; block: number; class: number }
+    thresholds: { function: number; block: number; class: number },
+    dirtyPaths?: string[]
   ): DuplicateGroup[] {
     this.cache.clearRunCaches();
-    this.cache.buildEmbSimCache(units);
+    this.cache.buildEmbSimCache(units, dirtyPaths);
 
     const duplicates: DuplicateGroup[] = [];
     const t0 = performance.now();

@@ -1231,30 +1231,69 @@ var DuplicationCache = class _DuplicationCache {
     this.comparisons.clear();
     this.fileIndex.clear();
     this.initialized = false;
+    this.embSimMatrix = [];
+    this.embSimIndex.clear();
     this.clearRunCaches();
   }
   /**
-   * Resets the per-run embedding and parent similarity caches.
-   * Should be called at the start of each findDuplicates run.
+   * Resets per-run memoization (parent similarities).
+   * The embedding matrix is intentionally preserved so incremental runs can
+   * reuse clean×clean values across calls.
    */
   clearRunCaches() {
-    this.embSimMatrix = [];
-    this.embSimIndex.clear();
     this.parentSimCache.clear();
   }
   /**
-   * Runs a single batched cosineSimilarity call and retains the raw matrix.
-   * Lookups are O(1) via an id-to-index map — no per-pair map writes.
+   * Builds or incrementally updates the embedding similarity matrix.
+   *
+   * Full rebuild (default): replaces the entire matrix — O(n²).
+   * Incremental (dirtyPaths provided + prior matrix exists): copies clean×clean
+   * cells from the old matrix and recomputes only dirty rows via one batched
+   * cosineSimilarity call — O(d·n) where d = number of dirty units.
    */
-  buildEmbSimCache(units) {
-    this.embSimMatrix = [];
-    this.embSimIndex.clear();
+  buildEmbSimCache(units, dirtyPaths) {
     const embedded = units.filter((u) => Array.isArray(u.embedding) && u.embedding.length > 0);
-    if (embedded.length < 2) return;
+    if (embedded.length < 2) {
+      this.embSimMatrix = [];
+      this.embSimIndex.clear();
+      return;
+    }
     const embeddings = embedded.map((u) => u.embedding);
-    embedded.forEach((u, i) => this.embSimIndex.set(u.id, i));
-    this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
-    log4("Built embedding similarity matrix: %d units", embedded.length);
+    const newIndex = new Map(embedded.map((u, i) => [u.id, i]));
+    const dirtySet = dirtyPaths ? new Set(dirtyPaths) : null;
+    const hasPriorMatrix = this.embSimMatrix.length > 0;
+    if (!dirtySet || !hasPriorMatrix) {
+      this.embSimIndex = newIndex;
+      this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
+      log4("Built full embedding similarity matrix: %d units", embedded.length);
+      return;
+    }
+    const dirtyIds = new Set(embedded.filter((u) => dirtySet.has(u.filePath)).map((u) => u.id));
+    if (dirtyIds.size === 0) {
+      log4("Matrix reused: no dirty units detected");
+      return;
+    }
+    const n = embedded.length;
+    const newMatrix = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (dirtyIds.has(embedded[i].id) || dirtyIds.has(embedded[j].id)) continue;
+        const oi = this.embSimIndex.get(embedded[i].id);
+        const oj = this.embSimIndex.get(embedded[j].id);
+        if (oi !== void 0 && oj !== void 0) newMatrix[i][j] = this.embSimMatrix[oi][oj];
+      }
+    }
+    const dirtyIndices = embedded.reduce((acc, u, i) => dirtyIds.has(u.id) ? [...acc, i] : acc, []);
+    const dirtyRows = cosineSimilarity(dirtyIndices.map((i) => embeddings[i]), embeddings);
+    dirtyIndices.forEach((rowIdx, di) => {
+      for (let j = 0; j < n; j++) {
+        newMatrix[rowIdx][j] = dirtyRows[di][j];
+        newMatrix[j][rowIdx] = dirtyRows[di][j];
+      }
+    });
+    this.embSimIndex = newIndex;
+    this.embSimMatrix = newMatrix;
+    log4("Incremental matrix update: %d dirty unit(s) out of %d total", dirtyIds.size, n);
   }
   /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
   getEmbSim(id1, id2) {
@@ -1292,13 +1331,16 @@ var UpdateService = class {
     this.deps = deps;
     this.exclusionService = exclusionService;
   }
+  /** Returns the list of file paths that were modified or deleted (dirty). */
   async updateIndex() {
     const extractor = this.deps.extractor;
     const cache = DuplicationCache.getInstance();
     try {
       const changeSet = await performIncrementalUpdate(this.deps.repoPath, extractor, this.deps.db);
       await this.exclusionService.cleanupExcludedFiles();
-      await cache.invalidate([...changeSet.changed, ...changeSet.deleted]);
+      const dirtyPaths = [...changeSet.changed, ...changeSet.deleted, ...changeSet.added];
+      await cache.invalidate(dirtyPaths);
+      return dirtyPaths;
     } catch (err) {
       log5("Error during index update:", err);
       throw err;
@@ -1316,7 +1358,12 @@ var DuplicateService = class {
   }
   config;
   cache = DuplicationCache.getInstance();
-  async findDuplicates(config) {
+  /**
+   * @param dirtyPaths - File paths changed since last run. When provided, only
+   *   dirty×all similarities are recomputed; clean×clean values are reused from
+   *   the existing matrix.  Pass undefined (or omit) for a full rebuild.
+   */
+  async findDuplicates(config, dirtyPaths) {
     this.config = config;
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
@@ -1325,7 +1372,7 @@ var DuplicateService = class {
       return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
     const thresholds = this.resolveThresholds(config.threshold);
-    const duplicates = this.computeDuplicates(allUnits, thresholds);
+    const duplicates = this.computeDuplicates(allUnits, thresholds, dirtyPaths);
     const filtered = duplicates.filter((g) => !this.isGroupExcluded(g));
     log6("Found %d duplicate groups (%d excluded)", filtered.length, duplicates.length - filtered.length);
     this.cache.update(filtered).catch((err) => log6("Cache update failed: %O", err));
@@ -1343,9 +1390,9 @@ var DuplicateService = class {
       class: clamp(fn + d.class - d.function)
     };
   }
-  computeDuplicates(units, thresholds) {
+  computeDuplicates(units, thresholds, dirtyPaths) {
     this.cache.clearRunCaches();
-    this.cache.buildEmbSimCache(units);
+    this.cache.buildEmbSimCache(units, dirtyPaths);
     const duplicates = [];
     const t0 = performance.now();
     for (const [type, typedUnits] of this.groupByType(units)) {
@@ -1758,9 +1805,10 @@ var DryScan = class {
     console.log("[DryScan] Checking for file changes...");
     const start = Date.now();
     await this.ensureDatabase();
-    await this.services.updater.updateIndex();
+    const dirtyPaths = await this.services.updater.updateIndex();
     const duration = Date.now() - start;
     console.log(`[DryScan] Index update complete. Took ${duration}ms.`);
+    return dirtyPaths;
   }
   /**
    * Runs duplicate detection and returns a normalized report payload ready for persistence or display.
@@ -1789,12 +1837,12 @@ var DryScan = class {
     await this.ensureDatabase();
     console.log("[DryScan] Updating index...");
     const updateStart = Date.now();
-    await this.updateIndex();
+    const dirtyPaths = await this.updateIndex();
     const updateDuration = Date.now() - updateStart;
     console.log(`[DryScan] Index update  took ${updateDuration}ms.`);
     console.log("[DryScan] Detecting duplicates...");
     const dupStart = Date.now();
-    const result = await this.services.duplicate.findDuplicates(config);
+    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths);
     const dupDuration = Date.now() - dupStart;
     console.log(`[DryScan] Duplicate detection took ${dupDuration}ms.`);
     return result;

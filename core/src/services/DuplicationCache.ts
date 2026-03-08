@@ -96,33 +96,83 @@ export class DuplicationCache {
     this.comparisons.clear();
     this.fileIndex.clear();
     this.initialized = false;
+    this.embSimMatrix = [];
+    this.embSimIndex.clear();
     this.clearRunCaches();
   }
 
   /**
-   * Resets the per-run embedding and parent similarity caches.
-   * Should be called at the start of each findDuplicates run.
+   * Resets per-run memoization (parent similarities).
+   * The embedding matrix is intentionally preserved so incremental runs can
+   * reuse clean×clean values across calls.
    */
   clearRunCaches(): void {
-    this.embSimMatrix = [];
-    this.embSimIndex.clear();
     this.parentSimCache.clear();
   }
 
   /**
-   * Runs a single batched cosineSimilarity call and retains the raw matrix.
-   * Lookups are O(1) via an id-to-index map — no per-pair map writes.
+   * Builds or incrementally updates the embedding similarity matrix.
+   *
+   * Full rebuild (default): replaces the entire matrix — O(n²).
+   * Incremental (dirtyPaths provided + prior matrix exists): copies clean×clean
+   * cells from the old matrix and recomputes only dirty rows via one batched
+   * cosineSimilarity call — O(d·n) where d = number of dirty units.
    */
-  buildEmbSimCache(units: IndexUnit[]): void {
-    this.embSimMatrix = [];
-    this.embSimIndex.clear();
+  buildEmbSimCache(units: IndexUnit[], dirtyPaths?: string[]): void {
     const embedded = units.filter(u => Array.isArray(u.embedding) && u.embedding.length > 0);
-    if (embedded.length < 2) return;
+    if (embedded.length < 2) {
+      this.embSimMatrix = [];
+      this.embSimIndex.clear();
+      return;
+    }
 
     const embeddings = embedded.map(u => u.embedding as number[]);
-    embedded.forEach((u, i) => this.embSimIndex.set(u.id, i));
-    this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
-    log("Built embedding similarity matrix: %d units", embedded.length);
+    const newIndex = new Map(embedded.map((u, i) => [u.id, i] as [string, number]));
+    const dirtySet = dirtyPaths ? new Set(dirtyPaths) : null;
+    const hasPriorMatrix = this.embSimMatrix.length > 0;
+
+    if (!dirtySet || !hasPriorMatrix) {
+      // Full rebuild
+      this.embSimIndex = newIndex;
+      this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
+      log("Built full embedding similarity matrix: %d units", embedded.length);
+      return;
+    }
+
+    // Incremental: identify dirty unit IDs
+    const dirtyIds = new Set(embedded.filter(u => dirtySet.has(u.filePath)).map(u => u.id));
+
+    if (dirtyIds.size === 0) {
+      log("Matrix reused: no dirty units detected");
+      return;
+    }
+
+    const n = embedded.length;
+
+    // Start with zeroes; copy clean×clean values from prior matrix
+    const newMatrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (dirtyIds.has(embedded[i].id) || dirtyIds.has(embedded[j].id)) continue;
+        const oi = this.embSimIndex.get(embedded[i].id);
+        const oj = this.embSimIndex.get(embedded[j].id);
+        if (oi !== undefined && oj !== undefined) newMatrix[i][j] = this.embSimMatrix[oi][oj];
+      }
+    }
+
+    // Recompute dirty rows in one batched call
+    const dirtyIndices = embedded.reduce<number[]>((acc, u, i) => (dirtyIds.has(u.id) ? [...acc, i] : acc), []);
+    const dirtyRows = cosineSimilarity(dirtyIndices.map(i => embeddings[i]), embeddings);
+    dirtyIndices.forEach((rowIdx, di) => {
+      for (let j = 0; j < n; j++) {
+        newMatrix[rowIdx][j] = dirtyRows[di][j];
+        newMatrix[j][rowIdx] = dirtyRows[di][j];
+      }
+    });
+
+    this.embSimIndex = newIndex;
+    this.embSimMatrix = newMatrix;
+    log("Incremental matrix update: %d dirty unit(s) out of %d total", dirtyIds.size, n);
   }
 
   /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
