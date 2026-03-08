@@ -57,7 +57,7 @@ export class DuplicateService {
     const duplicates: DuplicateGroup[] = [];
     const t0 = performance.now();
 
-    for (const [type, typedUnits] of this.groupEmbeddedByType(units)) {
+    for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
       log("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
 
@@ -66,8 +66,11 @@ export class DuplicateService {
           const left = typedUnits[i], right = typedUnits[j];
           if (this.shouldSkipComparison(left, right)) continue;
 
-          const similarity = this.cache.get(left.id, right.id, left.filePath, right.filePath)
-            ?? this.computeWeightedSimilarity(left, right, threshold);
+          // Always check the cache first — this allows pairs whose embeddings
+          // have since been cleared to still be reported using a prior score.
+          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
+          const hasEmbeddings = left.embedding?.length && right.embedding?.length;
+          const similarity = cached ?? (hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0);
           if (similarity < threshold) continue;
 
           const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
@@ -139,11 +142,11 @@ export class DuplicateService {
     ) / total;
   }
 
-  /** Groups units that have embeddings by type — single filter point for the comparison loop. */
-  private groupEmbeddedByType(units: IndexUnit[]): Map<IndexUnitType, IndexUnit[]> {
+  /** Groups all units by type for the comparison loop. Units without embeddings are included
+   * so that cache hits can still be returned for pairs whose embeddings were cleared. */
+  private groupByType(units: IndexUnit[]): Map<IndexUnitType, IndexUnit[]> {
     const byType = new Map<IndexUnitType, IndexUnit[]>();
     for (const unit of units) {
-      if (!unit.embedding?.length) continue;
       const list = byType.get(unit.unitType) ?? [];
       list.push(unit);
       byType.set(unit.unitType, list);

@@ -61,7 +61,7 @@ var DEFAULT_CONFIG = {
   excludedPairs: [],
   minLines: 3,
   minBlockLines: 5,
-  threshold: 0.88,
+  threshold: 0.8,
   embeddingSource: "http://localhost:11434",
   contextLength: 2048
 };
@@ -1348,14 +1348,16 @@ var DuplicateService = class {
     this.cache.buildEmbSimCache(units);
     const duplicates = [];
     const t0 = performance.now();
-    for (const [type, typedUnits] of this.groupEmbeddedByType(units)) {
+    for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
       log6("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
           const left = typedUnits[i], right = typedUnits[j];
           if (this.shouldSkipComparison(left, right)) continue;
-          const similarity = this.cache.get(left.id, right.id, left.filePath, right.filePath) ?? this.computeWeightedSimilarity(left, right, threshold);
+          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
+          const hasEmbeddings = left.embedding?.length && right.embedding?.length;
+          const similarity = cached ?? (hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0);
           if (similarity < threshold) continue;
           const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
           if (!exclusionString) continue;
@@ -1409,11 +1411,11 @@ var DuplicateService = class {
     if ((w.self * selfSim + (hasPF ? w.parentFunction : 0) + (hasPC ? w.parentClass : 0)) / total < threshold) return 0;
     return (w.self * selfSim + (hasPF ? w.parentFunction * this.parentSimilarity(left, right, "function" /* FUNCTION */) : 0) + (hasPC ? w.parentClass * this.parentSimilarity(left, right, "class" /* CLASS */) : 0)) / total;
   }
-  /** Groups units that have embeddings by type — single filter point for the comparison loop. */
-  groupEmbeddedByType(units) {
+  /** Groups all units by type for the comparison loop. Units without embeddings are included
+   * so that cache hits can still be returned for pairs whose embeddings were cleared. */
+  groupByType(units) {
     const byType = /* @__PURE__ */ new Map();
     for (const unit of units) {
-      if (!unit.embedding?.length) continue;
       const list = byType.get(unit.unitType) ?? [];
       list.push(unit);
       byType.set(unit.unitType, list);

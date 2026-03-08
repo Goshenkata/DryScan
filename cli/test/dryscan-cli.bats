@@ -99,6 +99,31 @@ EOF
   [ -s "${BATS_TMPDIR}/ui-${BATS_TEST_NUMBER}-resp.json" ]
 }
 
+@test "json and html stdout are not polluted by logs" {
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  json_out="${BATS_TMPDIR}/json-${BATS_TEST_NUMBER}.out"
+  json_err="${BATS_TMPDIR}/json-${BATS_TEST_NUMBER}.err"
+  html_out="${BATS_TMPDIR}/html-${BATS_TEST_NUMBER}.out"
+  html_err="${BATS_TMPDIR}/html-${BATS_TEST_NUMBER}.err"
+
+  node "${CLI_BIN}" --debug dupes --json "${TEST_ROOT}" >"${json_out}" 2>"${json_err}"
+  [ "$?" -eq 0 ]
+  [[ "$(cat "${json_out}")" == *"\"duplicates\""* ]]
+  [[ "$(cat "${json_out}")" != *"[DryScan]"* ]]
+  [[ "$(cat "${json_out}")" != *"Debugger attached."* ]]
+  node -e 'const fs=require("fs"); JSON.parse(fs.readFileSync(process.argv[1],"utf8"));' "${json_out}"
+  [[ "$(cat "${json_err}")" == *"[DryScan]"* ]]
+
+  node "${CLI_BIN}" --debug dupes --html "${TEST_ROOT}" >"${html_out}" 2>"${html_err}"
+  [ "$?" -eq 0 ]
+  [[ "$(cat "${html_out}")" == *"<!DOCTYPE html>"* ]]
+  [[ "$(cat "${html_out}")" != *"[DryScan]"* ]]
+  [[ "$(cat "${html_out}")" != *"Debugger attached."* ]]
+  [[ "$(cat "${html_err}")" == *"[DryScan]"* ]]
+}
+
 @test "update tracks removals additions modifications" {
   run_dryscan init "${TEST_ROOT}"
   [ "${status}" -eq 0 ]
@@ -407,6 +432,22 @@ EOF
 
   run_dryscan dupes --json "${TEST_ROOT}"
   [ "${status}" -eq 0 ]
+}
+
+@test "detects duplicates" {
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  run_dryscan dupes --json "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  parsed=$(printf '%s' "${output}" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{const start=d.indexOf("{");const end=d.lastIndexOf("}");if(start===-1||end===-1||end<start) process.exit(1);const j=JSON.parse(d.slice(start,end+1));process.stdout.write(`${j.score.score} ${j.score.duplicateGroups}`);});')
+  score=$(printf '%s' "${parsed}" | cut -d' ' -f1)
+  duplicate_groups=$(printf '%s' "${parsed}" | cut -d' ' -f2)
+
+  [ "${score}" != "" ]
+  [ "${duplicate_groups}" -eq 2 ]
+  node -e 'const score=Number(process.argv[1]); if (!(score > 5)) process.exit(1);' "${score}"
 }
 
 @test "skips dto-only classes and members" {

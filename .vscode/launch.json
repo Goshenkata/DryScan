@@ -54,7 +54,8 @@
       "program": "${workspaceFolder}/cli/src/cli.ts",
       "args": [
         "init",
-        "/home/goshenkata/Projects/DryScanDiplomna/datasets/Java/Stand Alone Clones"
+        // "/home/goshenkata/Projects/DryScanDiplomna/datasets/Java/Stand Alone Clones"
+        "./test-java-project"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -77,7 +78,8 @@
       "program": "${workspaceFolder}/cli/src/cli.ts",
       "args": [
         "dupes",
-        "/home/goshenkata/Projects/DryScanDiplomna/datasets/Java/Stand Alone Clones"
+        // "/home/goshenkata/Projects/DryScanDiplomna/datasets/Java/Stand Alone Clones"
+        "./test-java-project"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",

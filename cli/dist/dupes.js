@@ -58,9 +58,10 @@ function formatDuplicates(report, reportPath) {
 export async function handleDupesCommand(path, options) {
     const repoPath = resolve(path);
     await configStore.init(repoPath);
-    // When outputting HTML, redirect console.log to stderr to keep HTML clean
+    // For machine-readable output, keep stdout clean by sending internal logs to stderr.
     const originalLog = console.log;
-    if (options.html) {
+    const machineReadableOutput = Boolean(options.html || options.json);
+    if (machineReadableOutput) {
         console.log = console.error;
     }
     try {
@@ -89,7 +90,7 @@ export async function handleDupesCommand(path, options) {
             return;
         }
         if (options.json) {
-            console.log(JSON.stringify({
+            originalLog(JSON.stringify({
                 ...report,
                 reportPath,
             }, null, 2));
@@ -100,7 +101,7 @@ export async function handleDupesCommand(path, options) {
     }
     finally {
         // Restore original console.log
-        if (options.html) {
+        if (machineReadableOutput) {
             console.log = originalLog;
         }
     }
