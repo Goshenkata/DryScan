@@ -75,6 +75,41 @@ public class A {
     expect(names).to.not.include('A.shorty');
   });
 
+  it('indexes get-named methods that take parameters (non-trivial getters)', async () => {
+    // getUserById(Long id), getUserFromJwtToken(String token) etc. must NOT be skipped
+    // even though their names start with "get" — they have parameters and real logic.
+    const source = `
+public class UserService {
+    private java.util.Map<Long, Object> db = new java.util.HashMap<>();
+
+    public Object getUserById(Long id) {
+        if (id == null) throw new IllegalArgumentException("null id");
+        Object o = db.get(id);
+        if (o == null) throw new java.util.NoSuchElementException("not found");
+        return o;
+    }
+
+    public String getUserFromJwtToken(String token) {
+        if (token == null || token.isEmpty()) return null;
+        String[] parts = token.split("\\\\.");
+        if (parts.length != 3) throw new IllegalArgumentException("bad token");
+        return new String(java.util.Base64.getDecoder().decode(parts[1]));
+    }
+
+    public Object getId() { return null; }
+}
+`;
+    const extractor = await createExtractor({ minLines: 3, minBlockLines: 0 });
+    const results = await extractor.extractFromText('UserService.java', source);
+    const names = results.map(r => r.name);
+
+    // Methods with parameters must be indexed
+    expect(names).to.include('UserService.getUserById');
+    expect(names).to.include('UserService.getUserFromJwtToken');
+    // Zero-param getter must still be skipped (arity=0, trivial)
+    expect(names).to.not.include('UserService.getId');
+  });
+
   it('skips DTO-style classes and their members', async () => {
     const source = `
 public class UserDto {

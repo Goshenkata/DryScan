@@ -244,7 +244,8 @@ var JavaExtractor = class {
         const fnUnit = this.buildFunctionUnit(node, source, fileRelPath, currentClass);
         const fnLength = fnUnit.endLine - fnUnit.startLine;
         const bodyNode = this.getFunctionBody(node);
-        const skipFunction = this.shouldSkip("function" /* FUNCTION */, fnUnit.name, fnLength);
+        const fnArity = this.getNodeArity(node);
+        const skipFunction = this.shouldSkip("function" /* FUNCTION */, fnUnit.name, fnLength, fnArity);
         if (skipFunction) {
           return;
         }
@@ -311,21 +312,33 @@ var JavaExtractor = class {
     const normalized = this.normalizeCode(unit.code);
     return crypto.createHash(BLOCK_HASH_ALGO).update(normalized).digest("hex");
   }
-  shouldSkip(unitType, name, lineCount) {
+  shouldSkip(unitType, name, lineCount, arity) {
     if (!this.config) {
       throw new Error("Config not loaded before skip evaluation");
     }
     const config = this.config;
     const minLines = unitType === "block" /* BLOCK */ ? Math.max(indexConfig.blockMinLines, config.minBlockLines ?? 0) : config.minLines;
     const belowMin = minLines > 0 && lineCount < minLines;
-    const trivial = unitType === "function" /* FUNCTION */ && this.isTrivialFunction(name);
+    const trivial = unitType === "function" /* FUNCTION */ && this.isTrivialFunction(name, arity ?? 0);
     return belowMin || trivial;
   }
-  isTrivialFunction(fullName) {
+  /**
+   * A function is trivial if it follows a simple accessor pattern:
+   * - getters/isers: name matches get[A-Z] or is[A-Z] with exactly 0 parameters
+   * - setters: name matches set[A-Z] with at most 1 parameter
+   * Methods like getUserById(Long id) have arity > 0 and are NOT trivial.
+   */
+  isTrivialFunction(fullName, arity) {
     const simpleName = fullName.split(".").pop() || fullName;
-    const isGetter = /^(get|is)[A-Z]/.test(simpleName);
-    const isSetter = /^set[A-Z]/.test(simpleName);
+    const isGetter = /^(get|is)[A-Z]/.test(simpleName) && arity === 0;
+    const isSetter = /^set[A-Z]/.test(simpleName) && arity <= 1;
     return isGetter || isSetter;
+  }
+  /** Counts the formal parameters of a method or constructor node. */
+  getNodeArity(node) {
+    const params = node.childForFieldName?.("parameters");
+    if (!params) return 0;
+    return params.namedChildren.filter((c) => c.type === "formal_parameter" || c.type === "spread_parameter").length;
   }
   isDtoClass(node, source, className) {
     const classBody = node.children.find((child) => child.type === "class_body");
@@ -344,7 +357,8 @@ var JavaExtractor = class {
       if (child.type === "method_declaration" || child.type === "constructor_declaration") {
         const simpleName = this.getSimpleFunctionName(child, source);
         const fullName = `${className}.${simpleName}`;
-        if (!this.isTrivialFunction(fullName)) {
+        const arity = this.getNodeArity(child);
+        if (!this.isTrivialFunction(fullName, arity)) {
           return false;
         }
         continue;
