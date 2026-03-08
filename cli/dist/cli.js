@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import debug from 'debug';
 import { DryScan, configStore, } from '@goshenkata/dryscan-core';
 import { resolve } from 'path';
 import { createRequire } from 'module';
@@ -15,7 +16,7 @@ program
     .option('--debug', 'Enable debug logs from the DryScan core library')
     .hook('preAction', () => {
     if (program.opts().debug) {
-        process.env.DEBUG = (process.env.DEBUG ? process.env.DEBUG + ',DryScan:*' : 'DryScan:*');
+        debug.enable('DryScan:*');
     }
 });
 program
