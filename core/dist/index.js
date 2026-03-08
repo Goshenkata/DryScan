@@ -61,7 +61,7 @@ var DEFAULT_CONFIG = {
   excludedPairs: [],
   minLines: 3,
   minBlockLines: 5,
-  threshold: 0.88,
+  threshold: 0.8,
   embeddingSource: "http://localhost:11434",
   contextLength: 2048
 };
@@ -244,7 +244,8 @@ var JavaExtractor = class {
         const fnUnit = this.buildFunctionUnit(node, source, fileRelPath, currentClass);
         const fnLength = fnUnit.endLine - fnUnit.startLine;
         const bodyNode = this.getFunctionBody(node);
-        const skipFunction = this.shouldSkip("function" /* FUNCTION */, fnUnit.name, fnLength);
+        const fnArity = this.getNodeArity(node);
+        const skipFunction = this.shouldSkip("function" /* FUNCTION */, fnUnit.name, fnLength, fnArity);
         if (skipFunction) {
           return;
         }
@@ -311,21 +312,33 @@ var JavaExtractor = class {
     const normalized = this.normalizeCode(unit.code);
     return crypto.createHash(BLOCK_HASH_ALGO).update(normalized).digest("hex");
   }
-  shouldSkip(unitType, name, lineCount) {
+  shouldSkip(unitType, name, lineCount, arity) {
     if (!this.config) {
       throw new Error("Config not loaded before skip evaluation");
     }
     const config = this.config;
     const minLines = unitType === "block" /* BLOCK */ ? Math.max(indexConfig.blockMinLines, config.minBlockLines ?? 0) : config.minLines;
     const belowMin = minLines > 0 && lineCount < minLines;
-    const trivial = unitType === "function" /* FUNCTION */ && this.isTrivialFunction(name);
+    const trivial = unitType === "function" /* FUNCTION */ && this.isTrivialFunction(name, arity ?? 0);
     return belowMin || trivial;
   }
-  isTrivialFunction(fullName) {
+  /**
+   * A function is trivial if it follows a simple accessor pattern:
+   * - getters/isers: name matches get[A-Z] or is[A-Z] with exactly 0 parameters
+   * - setters: name matches set[A-Z] with at most 1 parameter
+   * Methods like getUserById(Long id) have arity > 0 and are NOT trivial.
+   */
+  isTrivialFunction(fullName, arity) {
     const simpleName = fullName.split(".").pop() || fullName;
-    const isGetter = /^(get|is)[A-Z]/.test(simpleName);
-    const isSetter = /^set[A-Z]/.test(simpleName);
+    const isGetter = /^(get|is)[A-Z]/.test(simpleName) && arity === 0;
+    const isSetter = /^set[A-Z]/.test(simpleName) && arity <= 1;
     return isGetter || isSetter;
+  }
+  /** Counts the formal parameters of a method or constructor node. */
+  getNodeArity(node) {
+    const params = node.childForFieldName?.("parameters");
+    if (!params) return 0;
+    return params.namedChildren.filter((c) => c.type === "formal_parameter" || c.type === "spread_parameter").length;
   }
   isDtoClass(node, source, className) {
     const classBody = node.children.find((child) => child.type === "class_body");
@@ -344,7 +357,8 @@ var JavaExtractor = class {
       if (child.type === "method_declaration" || child.type === "constructor_declaration") {
         const simpleName = this.getSimpleFunctionName(child, source);
         const fullName = `${className}.${simpleName}`;
-        if (!this.isTrivialFunction(fullName)) {
+        const arity = this.getNodeArity(child);
+        if (!this.isTrivialFunction(fullName, arity)) {
           return false;
         }
         continue;
@@ -1334,14 +1348,16 @@ var DuplicateService = class {
     this.cache.buildEmbSimCache(units);
     const duplicates = [];
     const t0 = performance.now();
-    for (const [type, typedUnits] of this.groupEmbeddedByType(units)) {
+    for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
       log6("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
           const left = typedUnits[i], right = typedUnits[j];
           if (this.shouldSkipComparison(left, right)) continue;
-          const similarity = this.cache.get(left.id, right.id, left.filePath, right.filePath) ?? this.computeWeightedSimilarity(left, right, threshold);
+          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
+          const hasEmbeddings = left.embedding?.length && right.embedding?.length;
+          const similarity = cached ?? (hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0);
           if (similarity < threshold) continue;
           const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
           if (!exclusionString) continue;
@@ -1395,11 +1411,11 @@ var DuplicateService = class {
     if ((w.self * selfSim + (hasPF ? w.parentFunction : 0) + (hasPC ? w.parentClass : 0)) / total < threshold) return 0;
     return (w.self * selfSim + (hasPF ? w.parentFunction * this.parentSimilarity(left, right, "function" /* FUNCTION */) : 0) + (hasPC ? w.parentClass * this.parentSimilarity(left, right, "class" /* CLASS */) : 0)) / total;
   }
-  /** Groups units that have embeddings by type — single filter point for the comparison loop. */
-  groupEmbeddedByType(units) {
+  /** Groups all units by type for the comparison loop. Units without embeddings are included
+   * so that cache hits can still be returned for pairs whose embeddings were cleared. */
+  groupByType(units) {
     const byType = /* @__PURE__ */ new Map();
     for (const unit of units) {
-      if (!unit.embedding?.length) continue;
       const list = byType.get(unit.unitType) ?? [];
       list.push(unit);
       byType.set(unit.unitType, list);

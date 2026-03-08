@@ -80,9 +80,10 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
   const repoPath = resolve(path);
   await configStore.init(repoPath);
   
-  // When outputting HTML, redirect console.log to stderr to keep HTML clean
+  // For machine-readable output, keep stdout clean by sending internal logs to stderr.
   const originalLog = console.log;
-  if (options.html) {
+  const machineReadableOutput = Boolean(options.html || options.json);
+  if (machineReadableOutput) {
     console.log = console.error;
   }
   
@@ -115,7 +116,7 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
     }
 
     if (options.json) {
-      console.log(
+      originalLog(
         JSON.stringify(
           {
             ...report,
@@ -130,7 +131,7 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
     }
   } finally {
     // Restore original console.log
-    if (options.html) {
+    if (machineReadableOutput) {
       console.log = originalLog;
     }
   }

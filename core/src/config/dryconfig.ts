@@ -11,7 +11,7 @@ export const DEFAULT_CONFIG: DryConfig = {
   excludedPairs: [],
   minLines: 3,
   minBlockLines: 5,
-  threshold: 0.88,
+  threshold: 0.8,
   embeddingSource: "http://localhost:11434",
   contextLength: 2048,
 };
