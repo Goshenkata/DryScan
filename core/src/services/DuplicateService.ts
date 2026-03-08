@@ -1,6 +1,5 @@
 import debug from "debug";
 import shortUuid from "short-uuid";
-import { cosineSimilarity } from "@langchain/core/utils/math";
 import { DryScanServiceDeps } from "./types";
 import { DuplicateAnalysisResult, DuplicateGroup, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
@@ -15,45 +14,36 @@ export class DuplicateService {
 
   constructor(private readonly deps: DryScanServiceDeps) {}
 
-  //todo vetter optimisation
   async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
     this.config = config;
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
     log("Starting duplicate analysis on %d units", allUnits.length);
+
     if (allUnits.length < 2) {
-      log("Not enough units to compare, returning empty result");
-      const score = this.computeDuplicationScore([], allUnits);
-      return { duplicates: [], score };
+      return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
 
     const thresholds = this.resolveThresholds(config.threshold);
-    log("Resolved thresholds: function=%d, block=%d, class=%d", thresholds.function, thresholds.block, thresholds.class);
     const duplicates = this.computeDuplicates(allUnits, thresholds);
-    const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
-    log("Found %d duplicate groups (%d excluded)", filteredDuplicates.length, duplicates.length - filteredDuplicates.length);
+    const filtered = duplicates.filter((g) => !this.isGroupExcluded(g));
+    log("Found %d duplicate groups (%d excluded)", filtered.length, duplicates.length - filtered.length);
 
-    // Update cache asynchronously; no need to block the main flow.
-    this.cache.update(filteredDuplicates).catch((err) => log("Cache update failed: %O", err));
+    this.cache.update(filtered).catch((err) => log("Cache update failed: %O", err));
 
-    const score = this.computeDuplicationScore(filteredDuplicates, allUnits);
+    const score = this.computeDuplicationScore(filtered, allUnits);
     log("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
-    return { duplicates: filteredDuplicates, score };
+    return { duplicates: filtered, score };
   }
 
   private resolveThresholds(functionThreshold?: number): { function: number; block: number; class: number } {
-    const defaults = indexConfig.thresholds;
-    const clamp = (value: number) => Math.min(1, Math.max(0, value));
-
-    const base = functionThreshold ?? defaults.function;
-    const blockOffset = defaults.block - defaults.function;
-    const classOffset = defaults.class - defaults.function;
-
-    const functionThresholdValue = clamp(base);
+    const d = indexConfig.thresholds;
+    const clamp = (v: number) => Math.min(1, Math.max(0, v));
+    const fn = clamp(functionThreshold ?? d.function);
     return {
-      function: functionThresholdValue,
-      block: clamp(functionThresholdValue + blockOffset),
-      class: clamp(functionThresholdValue + classOffset),
+      function: fn,
+      block: clamp(fn + d.block - d.function),
+      class: clamp(fn + d.class - d.function),
     };
   }
 
@@ -61,91 +51,47 @@ export class DuplicateService {
     units: IndexUnit[],
     thresholds: { function: number; block: number; class: number }
   ): DuplicateGroup[] {
+    this.cache.clearRunCaches();
+    this.cache.buildEmbSimCache(units);
+
     const duplicates: DuplicateGroup[] = [];
-    const byType = new Map<IndexUnitType, IndexUnit[]>();
-
-    for (const unit of units) {
-      const list = byType.get(unit.unitType) ?? [];
-      list.push(unit);
-      byType.set(unit.unitType, list);
-    }
-
     const t0 = performance.now();
 
-    for (const [type, typedUnits] of byType.entries()) {
+    for (const [type, typedUnits] of this.groupEmbeddedByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
-      log("Comparing %d units of type '%s' with threshold %d", typedUnits.length, type, threshold);
-      const typeStart = performance.now();
+      log("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
 
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
-          const left = typedUnits[i];
-          const right = typedUnits[j];
+          const left = typedUnits[i], right = typedUnits[j];
+          if (this.shouldSkipComparison(left, right)) continue;
 
-          if (this.shouldSkipComparison(left, right)) {
-            log("Skipping nested block comparison: '%s' and '%s'", left.name, right.name);
-            continue;
-          }
+          const similarity = this.cache.get(left.id, right.id, left.filePath, right.filePath)
+            ?? this.computeWeightedSimilarity(left, right, threshold);
+          if (similarity < threshold) continue;
 
-          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
-          let similarity: number | null = null;
+          const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
+          if (!exclusionString) continue;
 
-          if (cached !== null) {
-            log("Cache hit for '%s' <-> '%s': similarity=%d", left.name, right.name, cached);
-            similarity = cached;
-          } else {
-            if (!left.embedding || !right.embedding) {
-              log("Skipping '%s' <-> '%s': missing embedding", left.name, right.name);
-              continue;
-            }
-            similarity = this.computeWeightedSimilarity(left, right);
-            log("Computed similarity for '%s' <-> '%s': %d", left.name, right.name, similarity);
-          }
-
-          if (similarity === null) continue;
-
-          if (similarity >= threshold) {
-            const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
-            if (!exclusionString) continue;
-
-            log("Duplicate found: '%s' <-> '%s' (similarity=%d)", left.name, right.name, similarity);
-            duplicates.push({
-              id: `${left.id}::${right.id}`,
-              similarity,
-              shortId: shortUuid.generate(),
-              exclusionString,
-              left: {
-                id: left.id,
-                name: left.name,
-                filePath: left.filePath,
-                startLine: left.startLine,
-                endLine: left.endLine,
-                code: left.code,
-                unitType: left.unitType,
-              },
-              right: {
-                id: right.id,
-                name: right.name,
-                filePath: right.filePath,
-                startLine: right.startLine,
-                endLine: right.endLine,
-                code: right.code,
-                unitType: right.unitType,
-              },
-            });
-          }
+          duplicates.push({
+            id: `${left.id}::${right.id}`,
+            similarity,
+            shortId: shortUuid.generate(),
+            exclusionString,
+            left: this.toMember(left),
+            right: this.toMember(right),
+          });
         }
       }
-      log("Type '%s' comparisons completed in %dms", type, (performance.now() - typeStart).toFixed(2));
     }
 
-    log("computeDuplicates completed in %dms, found %d raw duplicates", (performance.now() - t0).toFixed(2), duplicates.length);
+    log("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
 
   private isGroupExcluded(group: DuplicateGroup): boolean {
     const config = this.config;
-    if (!config || !config.excludedPairs || config.excludedPairs.length === 0) return false;
+    if (!config?.excludedPairs?.length) return false;
     const key = this.deps.pairing.pairKeyForUnits(group.left, group.right);
     if (!key) return false;
     const actual = this.deps.pairing.parsePairKey(key);
@@ -162,140 +108,134 @@ export class DuplicateService {
     return thresholds.function;
   }
 
-  private computeWeightedSimilarity(left: IndexUnit, right: IndexUnit): number {
-    const selfSimilarity = this.similarityWithFallback(left, right);
+  private computeWeightedSimilarity(left: IndexUnit, right: IndexUnit, threshold: number): number {
+    const selfSim = this.similarity(left, right);
 
+    //CLASS
     if (left.unitType === IndexUnitType.CLASS) {
-      return selfSimilarity * indexConfig.weights.class.self;
+      return selfSim * indexConfig.weights.class.self;
     }
 
+    // FUNCTION
     if (left.unitType === IndexUnitType.FUNCTION) {
-      const weights = indexConfig.weights.function;
-      const hasParentClass = !!this.findParentOfType(left, IndexUnitType.CLASS) && !!this.findParentOfType(right, IndexUnitType.CLASS);
-      const parentClassSimilarity = hasParentClass ? this.parentSimilarity(left, right, IndexUnitType.CLASS) : 0;
-
-      // Re-normalize weights when parent context is missing, so standalone units aren't penalized.
-      const totalWeight = weights.self + (hasParentClass ? weights.parentClass : 0);
-      return ((weights.self * selfSimilarity) + (hasParentClass ? (weights.parentClass * parentClassSimilarity) : 0)) / totalWeight;
+      const w = indexConfig.weights.function;
+      const hasPC = this.bothHaveParent(left, right, IndexUnitType.CLASS);
+      const total = w.self + (hasPC ? w.parentClass : 0);
+      // Early exit: even with perfect parent similarity, can't reach threshold.
+      if ((w.self * selfSim + (hasPC ? w.parentClass : 0)) / total < threshold) return 0;
+      return (w.self * selfSim + (hasPC ? w.parentClass * this.parentSimilarity(left, right, IndexUnitType.CLASS) : 0)) / total;
     }
 
-    const weights = indexConfig.weights.block;
-    const hasParentFunction = !!this.findParentOfType(left, IndexUnitType.FUNCTION) && !!this.findParentOfType(right, IndexUnitType.FUNCTION);
-    const hasParentClass = !!this.findParentOfType(left, IndexUnitType.CLASS) && !!this.findParentOfType(right, IndexUnitType.CLASS);
-    const parentFuncSim = hasParentFunction ? this.parentSimilarity(left, right, IndexUnitType.FUNCTION) : 0;
-    const parentClassSim = hasParentClass ? this.parentSimilarity(left, right, IndexUnitType.CLASS) : 0;
-
-    // Re-normalize weights when some parent context is missing.
-    const totalWeight =
-      weights.self +
-      (hasParentFunction ? weights.parentFunction : 0) +
-      (hasParentClass ? weights.parentClass : 0);
-
+    // BLOCK
+    const w = indexConfig.weights.block;
+    const hasPF = this.bothHaveParent(left, right, IndexUnitType.FUNCTION);
+    const hasPC = this.bothHaveParent(left, right, IndexUnitType.CLASS);
+    const total = w.self + (hasPF ? w.parentFunction : 0) + (hasPC ? w.parentClass : 0);
+    if ((w.self * selfSim + (hasPF ? w.parentFunction : 0) + (hasPC ? w.parentClass : 0)) / total < threshold) return 0;
     return (
-      (weights.self * selfSimilarity) +
-      (hasParentFunction ? (weights.parentFunction * parentFuncSim) : 0) +
-      (hasParentClass ? (weights.parentClass * parentClassSim) : 0)
-    ) / totalWeight;
+      w.self * selfSim +
+      (hasPF ? w.parentFunction * this.parentSimilarity(left, right, IndexUnitType.FUNCTION) : 0) +
+      (hasPC ? w.parentClass * this.parentSimilarity(left, right, IndexUnitType.CLASS) : 0)
+    ) / total;
   }
 
-  private parentSimilarity(left: IndexUnit, right: IndexUnit, targetType: IndexUnitType): number {
-    const leftParent = this.findParentOfType(left, targetType);
-    const rightParent = this.findParentOfType(right, targetType);
-    if (!leftParent || !rightParent) return 0;
-    return this.similarityWithFallback(leftParent, rightParent);
-  }
-
-  private similarityWithFallback(left: IndexUnit, right: IndexUnit): number {
-    const leftHasEmbedding = this.hasVector(left);
-    const rightHasEmbedding = this.hasVector(right);
-
-    if (leftHasEmbedding && rightHasEmbedding) {
-      return cosineSimilarity([left.embedding as number[]], [right.embedding as number[]])[0][0];
+  /** Groups units that have embeddings by type — single filter point for the comparison loop. */
+  private groupEmbeddedByType(units: IndexUnit[]): Map<IndexUnitType, IndexUnit[]> {
+    const byType = new Map<IndexUnitType, IndexUnit[]>();
+    for (const unit of units) {
+      if (!unit.embedding?.length) continue;
+      const list = byType.get(unit.unitType) ?? [];
+      list.push(unit);
+      byType.set(unit.unitType, list);
     }
+    return byType;
+  }
 
-    return this.childSimilarity(left, right);
+  private toMember(unit: IndexUnit): DuplicateGroup["left"] {
+    return {
+      id: unit.id,
+      name: unit.name,
+      filePath: unit.filePath,
+      startLine: unit.startLine,
+      endLine: unit.endLine,
+      code: unit.code,
+      unitType: unit.unitType,
+    };
+  }
+
+  private bothHaveParent(left: IndexUnit, right: IndexUnit, type: IndexUnitType): boolean {
+    return !!this.findParent(left, type) && !!this.findParent(right, type);
+  }
+
+  private parentSimilarity(left: IndexUnit, right: IndexUnit, type: IndexUnitType): number {
+    const lp = this.findParent(left, type), rp = this.findParent(right, type);
+    if (!lp || !rp) return 0;
+
+    const key = lp.id < rp.id ? `${lp.id}::${rp.id}` : `${rp.id}::${lp.id}`;
+    const cached = this.cache.getParentSim(key);
+    if (cached !== undefined) return cached;
+
+    const sim = this.similarity(lp, rp);
+    this.cache.setParentSim(key, sim);
+    return sim;
+  }
+
+  /** Resolves similarity via the pre-computed embedding matrix, falling back to best child match. */
+  private similarity(left: IndexUnit, right: IndexUnit): number {
+    return this.cache.getEmbSim(left.id, right.id) ?? this.childSimilarity(left, right);
   }
 
   private childSimilarity(left: IndexUnit, right: IndexUnit): number {
-    const leftChildren = left.children ?? [];
-    const rightChildren = right.children ?? [];
-    if (leftChildren.length === 0 || rightChildren.length === 0) return 0;
+    const lc = left.children ?? [], rc = right.children ?? [];
+    if (!lc.length || !rc.length) return 0;
 
     let best = 0;
-    for (const lChild of leftChildren) {
-      for (const rChild of rightChildren) {
-        if (lChild.unitType !== rChild.unitType) continue;
-        const sim = this.similarityWithFallback(lChild, rChild);
+    for (const l of lc) {
+      for (const r of rc) {
+        if (l.unitType !== r.unitType) continue;
+        const sim = this.similarity(l, r);
         if (sim > best) best = sim;
       }
     }
     return best;
   }
 
-  private hasVector(unit: IndexUnit): boolean {
-    return Array.isArray(unit.embedding) && unit.embedding.length > 0;
-  }
-
   private shouldSkipComparison(left: IndexUnit, right: IndexUnit): boolean {
-    if (left.unitType !== IndexUnitType.BLOCK || right.unitType !== IndexUnitType.BLOCK) {
-      return false;
-    }
-
-    if (left.filePath !== right.filePath) {
-      return false;
-    }
-
-    const leftContainsRight = left.startLine <= right.startLine && left.endLine >= right.endLine;
-    const rightContainsLeft = right.startLine <= left.startLine && right.endLine >= left.endLine;
-    return leftContainsRight || rightContainsLeft;
+    if (left.unitType !== IndexUnitType.BLOCK || right.unitType !== IndexUnitType.BLOCK) return false;
+    if (left.filePath !== right.filePath) return false;
+    return (left.startLine <= right.startLine && left.endLine >= right.endLine)
+        || (right.startLine <= left.startLine && right.endLine >= left.endLine);
   }
 
-  private findParentOfType(unit: IndexUnit, targetType: IndexUnitType): IndexUnit | null {
-    let current: IndexUnit | undefined | null = unit.parent;
-    while (current) {
-      if (current.unitType === targetType) return current;
-      current = current.parent;
+  private findParent(unit: IndexUnit, type: IndexUnitType): IndexUnit | null {
+    let p = unit.parent;
+    while (p) {
+      if (p.unitType === type) return p;
+      p = p.parent;
     }
     return null;
   }
 
   private computeDuplicationScore(duplicates: DuplicateGroup[], allUnits: IndexUnit[]): DuplicationScore {
-    const totalLines = this.calculateTotalLines(allUnits);
+    const totalLines = allUnits.reduce((sum, u) => sum + u.endLine - u.startLine + 1, 0);
 
-    if (totalLines === 0 || duplicates.length === 0) {
-      return {
-        score: 0,
-        grade: "Excellent",
-        totalLines,
-        duplicateLines: 0,
-        duplicateGroups: 0,
-      };
+    if (!totalLines || !duplicates.length) {
+      return { score: 0, grade: "Excellent", totalLines, duplicateLines: 0, duplicateGroups: 0 };
     }
 
-    const weightedDuplicateLines = duplicates.reduce((sum, group) => {
-      const leftLines = group.left.endLine - group.left.startLine + 1;
-      const rightLines = group.right.endLine - group.right.startLine + 1;
-      const avgLines = (leftLines + rightLines) / 2;
-      return sum + group.similarity * avgLines;
+    const duplicateLines = duplicates.reduce((sum, g) => {
+      const avg = ((g.left.endLine - g.left.startLine + 1) + (g.right.endLine - g.right.startLine + 1)) / 2;
+      return sum + g.similarity * avg;
     }, 0);
 
-    const score = (weightedDuplicateLines / totalLines) * 100;
-    const grade = this.getScoreGrade(score);
-
+    const score = (duplicateLines / totalLines) * 100;
     return {
       score,
-      grade,
+      grade: this.getScoreGrade(score),
       totalLines,
-      duplicateLines: Math.round(weightedDuplicateLines),
+      duplicateLines: Math.round(duplicateLines),
       duplicateGroups: duplicates.length,
     };
-  }
-
-  private calculateTotalLines(units: IndexUnit[]): number {
-    return units.reduce((sum, unit) => {
-      const lines = unit.endLine - unit.startLine + 1;
-      return sum + lines;
-    }, 0);
   }
 
   private getScoreGrade(score: number): DuplicationScore["grade"] {

@@ -1021,7 +1021,7 @@ var RepositoryInitializer = class {
 };
 
 // src/services/UpdateService.ts
-import debug4 from "debug";
+import debug5 from "debug";
 
 // src/DryScanUpdater.ts
 import path4 from "path";
@@ -1141,11 +1141,20 @@ async function performIncrementalUpdate(repoPath, extractor, db) {
 }
 
 // src/services/DuplicationCache.ts
+import debug4 from "debug";
+import { cosineSimilarity } from "@langchain/core/utils/math";
+var log4 = debug4("DryScan:DuplicationCache");
 var DuplicationCache = class _DuplicationCache {
   static instance = null;
   comparisons = /* @__PURE__ */ new Map();
   fileIndex = /* @__PURE__ */ new Map();
   initialized = false;
+  /** Per-run similarity matrix from a single batched library call (reset each run). */
+  embSimMatrix = [];
+  /** Maps unit ID to its row/column index in embSimMatrix. */
+  embSimIndex = /* @__PURE__ */ new Map();
+  /** Per-run memoization of parent unit similarity scores (reset each run). */
+  parentSimCache = /* @__PURE__ */ new Map();
   static getInstance() {
     if (!_DuplicationCache.instance) {
       _DuplicationCache.instance = new _DuplicationCache();
@@ -1208,6 +1217,45 @@ var DuplicationCache = class _DuplicationCache {
     this.comparisons.clear();
     this.fileIndex.clear();
     this.initialized = false;
+    this.clearRunCaches();
+  }
+  /**
+   * Resets the per-run embedding and parent similarity caches.
+   * Should be called at the start of each findDuplicates run.
+   */
+  clearRunCaches() {
+    this.embSimMatrix = [];
+    this.embSimIndex.clear();
+    this.parentSimCache.clear();
+  }
+  /**
+   * Runs a single batched cosineSimilarity call and retains the raw matrix.
+   * Lookups are O(1) via an id-to-index map — no per-pair map writes.
+   */
+  buildEmbSimCache(units) {
+    this.embSimMatrix = [];
+    this.embSimIndex.clear();
+    const embedded = units.filter((u) => Array.isArray(u.embedding) && u.embedding.length > 0);
+    if (embedded.length < 2) return;
+    const embeddings = embedded.map((u) => u.embedding);
+    embedded.forEach((u, i) => this.embSimIndex.set(u.id, i));
+    this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
+    log4("Built embedding similarity matrix: %d units", embedded.length);
+  }
+  /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
+  getEmbSim(id1, id2) {
+    const i = this.embSimIndex.get(id1);
+    const j = this.embSimIndex.get(id2);
+    if (i === void 0 || j === void 0) return void 0;
+    return this.embSimMatrix[i][j];
+  }
+  /** Returns the memoized parent similarity for the given stable key, if available. */
+  getParentSim(key) {
+    return this.parentSimCache.get(key);
+  }
+  /** Stores a memoized parent similarity for the given stable key. */
+  setParentSim(key, sim) {
+    this.parentSimCache.set(key, sim);
   }
   addKeyForFile(filePath, key) {
     const current = this.fileIndex.get(filePath) ?? /* @__PURE__ */ new Set();
@@ -1224,7 +1272,7 @@ var DuplicationCache = class _DuplicationCache {
 };
 
 // src/services/UpdateService.ts
-var log4 = debug4("DryScan:UpdateService");
+var log5 = debug5("DryScan:UpdateService");
 var UpdateService = class {
   constructor(deps, exclusionService) {
     this.deps = deps;
@@ -1238,131 +1286,82 @@ var UpdateService = class {
       await this.exclusionService.cleanupExcludedFiles();
       await cache.invalidate([...changeSet.changed, ...changeSet.deleted]);
     } catch (err) {
-      log4("Error during index update:", err);
+      log5("Error during index update:", err);
       throw err;
     }
   }
 };
 
 // src/services/DuplicateService.ts
-import debug5 from "debug";
+import debug6 from "debug";
 import shortUuid from "short-uuid";
-import { cosineSimilarity } from "@langchain/core/utils/math";
-var log5 = debug5("DryScan:DuplicateService");
+var log6 = debug6("DryScan:DuplicateService");
 var DuplicateService = class {
   constructor(deps) {
     this.deps = deps;
   }
   config;
   cache = DuplicationCache.getInstance();
-  //todo vetter optimisation
   async findDuplicates(config) {
     this.config = config;
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
-    log5("Starting duplicate analysis on %d units", allUnits.length);
+    log6("Starting duplicate analysis on %d units", allUnits.length);
     if (allUnits.length < 2) {
-      log5("Not enough units to compare, returning empty result");
-      const score2 = this.computeDuplicationScore([], allUnits);
-      return { duplicates: [], score: score2 };
+      return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
     const thresholds = this.resolveThresholds(config.threshold);
-    log5("Resolved thresholds: function=%d, block=%d, class=%d", thresholds.function, thresholds.block, thresholds.class);
     const duplicates = this.computeDuplicates(allUnits, thresholds);
-    const filteredDuplicates = duplicates.filter((group) => !this.isGroupExcluded(group));
-    log5("Found %d duplicate groups (%d excluded)", filteredDuplicates.length, duplicates.length - filteredDuplicates.length);
-    this.cache.update(filteredDuplicates).catch((err) => log5("Cache update failed: %O", err));
-    const score = this.computeDuplicationScore(filteredDuplicates, allUnits);
-    log5("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
-    return { duplicates: filteredDuplicates, score };
+    const filtered = duplicates.filter((g) => !this.isGroupExcluded(g));
+    log6("Found %d duplicate groups (%d excluded)", filtered.length, duplicates.length - filtered.length);
+    this.cache.update(filtered).catch((err) => log6("Cache update failed: %O", err));
+    const score = this.computeDuplicationScore(filtered, allUnits);
+    log6("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+    return { duplicates: filtered, score };
   }
   resolveThresholds(functionThreshold) {
-    const defaults = indexConfig.thresholds;
-    const clamp = (value) => Math.min(1, Math.max(0, value));
-    const base = functionThreshold ?? defaults.function;
-    const blockOffset = defaults.block - defaults.function;
-    const classOffset = defaults.class - defaults.function;
-    const functionThresholdValue = clamp(base);
+    const d = indexConfig.thresholds;
+    const clamp = (v) => Math.min(1, Math.max(0, v));
+    const fn = clamp(functionThreshold ?? d.function);
     return {
-      function: functionThresholdValue,
-      block: clamp(functionThresholdValue + blockOffset),
-      class: clamp(functionThresholdValue + classOffset)
+      function: fn,
+      block: clamp(fn + d.block - d.function),
+      class: clamp(fn + d.class - d.function)
     };
   }
   computeDuplicates(units, thresholds) {
+    this.cache.clearRunCaches();
+    this.cache.buildEmbSimCache(units);
     const duplicates = [];
-    const byType = /* @__PURE__ */ new Map();
-    for (const unit of units) {
-      const list = byType.get(unit.unitType) ?? [];
-      list.push(unit);
-      byType.set(unit.unitType, list);
-    }
     const t0 = performance.now();
-    for (const [type, typedUnits] of byType.entries()) {
+    for (const [type, typedUnits] of this.groupEmbeddedByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
-      log5("Comparing %d units of type '%s' with threshold %d", typedUnits.length, type, threshold);
-      const typeStart = performance.now();
+      log6("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
-          const left = typedUnits[i];
-          const right = typedUnits[j];
-          if (this.shouldSkipComparison(left, right)) {
-            log5("Skipping nested block comparison: '%s' and '%s'", left.name, right.name);
-            continue;
-          }
-          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
-          let similarity = null;
-          if (cached !== null) {
-            log5("Cache hit for '%s' <-> '%s': similarity=%d", left.name, right.name, cached);
-            similarity = cached;
-          } else {
-            if (!left.embedding || !right.embedding) {
-              log5("Skipping '%s' <-> '%s': missing embedding", left.name, right.name);
-              continue;
-            }
-            similarity = this.computeWeightedSimilarity(left, right);
-            log5("Computed similarity for '%s' <-> '%s': %d", left.name, right.name, similarity);
-          }
-          if (similarity === null) continue;
-          if (similarity >= threshold) {
-            const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
-            if (!exclusionString) continue;
-            log5("Duplicate found: '%s' <-> '%s' (similarity=%d)", left.name, right.name, similarity);
-            duplicates.push({
-              id: `${left.id}::${right.id}`,
-              similarity,
-              shortId: shortUuid.generate(),
-              exclusionString,
-              left: {
-                id: left.id,
-                name: left.name,
-                filePath: left.filePath,
-                startLine: left.startLine,
-                endLine: left.endLine,
-                code: left.code,
-                unitType: left.unitType
-              },
-              right: {
-                id: right.id,
-                name: right.name,
-                filePath: right.filePath,
-                startLine: right.startLine,
-                endLine: right.endLine,
-                code: right.code,
-                unitType: right.unitType
-              }
-            });
-          }
+          const left = typedUnits[i], right = typedUnits[j];
+          if (this.shouldSkipComparison(left, right)) continue;
+          const similarity = this.cache.get(left.id, right.id, left.filePath, right.filePath) ?? this.computeWeightedSimilarity(left, right, threshold);
+          if (similarity < threshold) continue;
+          const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
+          if (!exclusionString) continue;
+          duplicates.push({
+            id: `${left.id}::${right.id}`,
+            similarity,
+            shortId: shortUuid.generate(),
+            exclusionString,
+            left: this.toMember(left),
+            right: this.toMember(right)
+          });
         }
       }
-      log5("Type '%s' comparisons completed in %dms", type, (performance.now() - typeStart).toFixed(2));
     }
-    log5("computeDuplicates completed in %dms, found %d raw duplicates", (performance.now() - t0).toFixed(2), duplicates.length);
+    log6("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
   isGroupExcluded(group) {
     const config = this.config;
-    if (!config || !config.excludedPairs || config.excludedPairs.length === 0) return false;
+    if (!config?.excludedPairs?.length) return false;
     const key = this.deps.pairing.pairKeyForUnits(group.left, group.right);
     if (!key) return false;
     const actual = this.deps.pairing.parsePairKey(key);
@@ -1377,108 +1376,107 @@ var DuplicateService = class {
     if (type === "block" /* BLOCK */) return thresholds.block;
     return thresholds.function;
   }
-  computeWeightedSimilarity(left, right) {
-    const selfSimilarity = this.similarityWithFallback(left, right);
+  computeWeightedSimilarity(left, right, threshold) {
+    const selfSim = this.similarity(left, right);
     if (left.unitType === "class" /* CLASS */) {
-      return selfSimilarity * indexConfig.weights.class.self;
+      return selfSim * indexConfig.weights.class.self;
     }
     if (left.unitType === "function" /* FUNCTION */) {
-      const weights2 = indexConfig.weights.function;
-      const hasParentClass2 = !!this.findParentOfType(left, "class" /* CLASS */) && !!this.findParentOfType(right, "class" /* CLASS */);
-      const parentClassSimilarity = hasParentClass2 ? this.parentSimilarity(left, right, "class" /* CLASS */) : 0;
-      const totalWeight2 = weights2.self + (hasParentClass2 ? weights2.parentClass : 0);
-      return (weights2.self * selfSimilarity + (hasParentClass2 ? weights2.parentClass * parentClassSimilarity : 0)) / totalWeight2;
+      const w2 = indexConfig.weights.function;
+      const hasPC2 = this.bothHaveParent(left, right, "class" /* CLASS */);
+      const total2 = w2.self + (hasPC2 ? w2.parentClass : 0);
+      if ((w2.self * selfSim + (hasPC2 ? w2.parentClass : 0)) / total2 < threshold) return 0;
+      return (w2.self * selfSim + (hasPC2 ? w2.parentClass * this.parentSimilarity(left, right, "class" /* CLASS */) : 0)) / total2;
     }
-    const weights = indexConfig.weights.block;
-    const hasParentFunction = !!this.findParentOfType(left, "function" /* FUNCTION */) && !!this.findParentOfType(right, "function" /* FUNCTION */);
-    const hasParentClass = !!this.findParentOfType(left, "class" /* CLASS */) && !!this.findParentOfType(right, "class" /* CLASS */);
-    const parentFuncSim = hasParentFunction ? this.parentSimilarity(left, right, "function" /* FUNCTION */) : 0;
-    const parentClassSim = hasParentClass ? this.parentSimilarity(left, right, "class" /* CLASS */) : 0;
-    const totalWeight = weights.self + (hasParentFunction ? weights.parentFunction : 0) + (hasParentClass ? weights.parentClass : 0);
-    return (weights.self * selfSimilarity + (hasParentFunction ? weights.parentFunction * parentFuncSim : 0) + (hasParentClass ? weights.parentClass * parentClassSim : 0)) / totalWeight;
+    const w = indexConfig.weights.block;
+    const hasPF = this.bothHaveParent(left, right, "function" /* FUNCTION */);
+    const hasPC = this.bothHaveParent(left, right, "class" /* CLASS */);
+    const total = w.self + (hasPF ? w.parentFunction : 0) + (hasPC ? w.parentClass : 0);
+    if ((w.self * selfSim + (hasPF ? w.parentFunction : 0) + (hasPC ? w.parentClass : 0)) / total < threshold) return 0;
+    return (w.self * selfSim + (hasPF ? w.parentFunction * this.parentSimilarity(left, right, "function" /* FUNCTION */) : 0) + (hasPC ? w.parentClass * this.parentSimilarity(left, right, "class" /* CLASS */) : 0)) / total;
   }
-  parentSimilarity(left, right, targetType) {
-    const leftParent = this.findParentOfType(left, targetType);
-    const rightParent = this.findParentOfType(right, targetType);
-    if (!leftParent || !rightParent) return 0;
-    return this.similarityWithFallback(leftParent, rightParent);
-  }
-  similarityWithFallback(left, right) {
-    const leftHasEmbedding = this.hasVector(left);
-    const rightHasEmbedding = this.hasVector(right);
-    if (leftHasEmbedding && rightHasEmbedding) {
-      return cosineSimilarity([left.embedding], [right.embedding])[0][0];
+  /** Groups units that have embeddings by type — single filter point for the comparison loop. */
+  groupEmbeddedByType(units) {
+    const byType = /* @__PURE__ */ new Map();
+    for (const unit of units) {
+      if (!unit.embedding?.length) continue;
+      const list = byType.get(unit.unitType) ?? [];
+      list.push(unit);
+      byType.set(unit.unitType, list);
     }
-    return this.childSimilarity(left, right);
+    return byType;
+  }
+  toMember(unit) {
+    return {
+      id: unit.id,
+      name: unit.name,
+      filePath: unit.filePath,
+      startLine: unit.startLine,
+      endLine: unit.endLine,
+      code: unit.code,
+      unitType: unit.unitType
+    };
+  }
+  bothHaveParent(left, right, type) {
+    return !!this.findParent(left, type) && !!this.findParent(right, type);
+  }
+  parentSimilarity(left, right, type) {
+    const lp = this.findParent(left, type), rp = this.findParent(right, type);
+    if (!lp || !rp) return 0;
+    const key = lp.id < rp.id ? `${lp.id}::${rp.id}` : `${rp.id}::${lp.id}`;
+    const cached = this.cache.getParentSim(key);
+    if (cached !== void 0) return cached;
+    const sim = this.similarity(lp, rp);
+    this.cache.setParentSim(key, sim);
+    return sim;
+  }
+  /** Resolves similarity via the pre-computed embedding matrix, falling back to best child match. */
+  similarity(left, right) {
+    return this.cache.getEmbSim(left.id, right.id) ?? this.childSimilarity(left, right);
   }
   childSimilarity(left, right) {
-    const leftChildren = left.children ?? [];
-    const rightChildren = right.children ?? [];
-    if (leftChildren.length === 0 || rightChildren.length === 0) return 0;
+    const lc = left.children ?? [], rc = right.children ?? [];
+    if (!lc.length || !rc.length) return 0;
     let best = 0;
-    for (const lChild of leftChildren) {
-      for (const rChild of rightChildren) {
-        if (lChild.unitType !== rChild.unitType) continue;
-        const sim = this.similarityWithFallback(lChild, rChild);
+    for (const l of lc) {
+      for (const r of rc) {
+        if (l.unitType !== r.unitType) continue;
+        const sim = this.similarity(l, r);
         if (sim > best) best = sim;
       }
     }
     return best;
   }
-  hasVector(unit) {
-    return Array.isArray(unit.embedding) && unit.embedding.length > 0;
-  }
   shouldSkipComparison(left, right) {
-    if (left.unitType !== "block" /* BLOCK */ || right.unitType !== "block" /* BLOCK */) {
-      return false;
-    }
-    if (left.filePath !== right.filePath) {
-      return false;
-    }
-    const leftContainsRight = left.startLine <= right.startLine && left.endLine >= right.endLine;
-    const rightContainsLeft = right.startLine <= left.startLine && right.endLine >= left.endLine;
-    return leftContainsRight || rightContainsLeft;
+    if (left.unitType !== "block" /* BLOCK */ || right.unitType !== "block" /* BLOCK */) return false;
+    if (left.filePath !== right.filePath) return false;
+    return left.startLine <= right.startLine && left.endLine >= right.endLine || right.startLine <= left.startLine && right.endLine >= left.endLine;
   }
-  findParentOfType(unit, targetType) {
-    let current = unit.parent;
-    while (current) {
-      if (current.unitType === targetType) return current;
-      current = current.parent;
+  findParent(unit, type) {
+    let p = unit.parent;
+    while (p) {
+      if (p.unitType === type) return p;
+      p = p.parent;
     }
     return null;
   }
   computeDuplicationScore(duplicates, allUnits) {
-    const totalLines = this.calculateTotalLines(allUnits);
-    if (totalLines === 0 || duplicates.length === 0) {
-      return {
-        score: 0,
-        grade: "Excellent",
-        totalLines,
-        duplicateLines: 0,
-        duplicateGroups: 0
-      };
+    const totalLines = allUnits.reduce((sum, u) => sum + u.endLine - u.startLine + 1, 0);
+    if (!totalLines || !duplicates.length) {
+      return { score: 0, grade: "Excellent", totalLines, duplicateLines: 0, duplicateGroups: 0 };
     }
-    const weightedDuplicateLines = duplicates.reduce((sum, group) => {
-      const leftLines = group.left.endLine - group.left.startLine + 1;
-      const rightLines = group.right.endLine - group.right.startLine + 1;
-      const avgLines = (leftLines + rightLines) / 2;
-      return sum + group.similarity * avgLines;
+    const duplicateLines = duplicates.reduce((sum, g) => {
+      const avg = (g.left.endLine - g.left.startLine + 1 + (g.right.endLine - g.right.startLine + 1)) / 2;
+      return sum + g.similarity * avg;
     }, 0);
-    const score = weightedDuplicateLines / totalLines * 100;
-    const grade = this.getScoreGrade(score);
+    const score = duplicateLines / totalLines * 100;
     return {
       score,
-      grade,
+      grade: this.getScoreGrade(score),
       totalLines,
-      duplicateLines: Math.round(weightedDuplicateLines),
+      duplicateLines: Math.round(duplicateLines),
       duplicateGroups: duplicates.length
     };
-  }
-  calculateTotalLines(units) {
-    return units.reduce((sum, unit) => {
-      const lines = unit.endLine - unit.startLine + 1;
-      return sum + lines;
-    }, 0);
   }
   getScoreGrade(score) {
     if (score < 5) return "Excellent";
@@ -1575,9 +1573,9 @@ var ExclusionService = class {
 
 // src/services/PairingService.ts
 import crypto3 from "crypto";
-import debug6 from "debug";
+import debug7 from "debug";
 import { minimatch as minimatch2 } from "minimatch";
-var log6 = debug6("DryScan:pairs");
+var log7 = debug7("DryScan:pairs");
 var PairingService = class {
   constructor(indexUnitExtractor) {
     this.indexUnitExtractor = indexUnitExtractor;
@@ -1588,7 +1586,7 @@ var PairingService = class {
    */
   pairKeyForUnits(left, right) {
     if (left.unitType !== right.unitType) {
-      log6("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
+      log7("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
       return null;
     }
     const type = left.unitType;
@@ -1604,13 +1602,13 @@ var PairingService = class {
   parsePairKey(value) {
     const parts = value.split("|");
     if (parts.length !== 3) {
-      log6("Invalid pair key format: %s", value);
+      log7("Invalid pair key format: %s", value);
       return null;
     }
     const [typeRaw, leftRaw, rightRaw] = parts;
     const type = this.stringToUnitType(typeRaw);
     if (!type) {
-      log6("Unknown unit type in pair key: %s", typeRaw);
+      log7("Unknown unit type in pair key: %s", typeRaw);
       return null;
     }
     const [left, right] = [leftRaw, rightRaw].sort();

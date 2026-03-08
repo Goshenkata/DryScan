@@ -1,4 +1,8 @@
-import { DuplicateGroup } from "../types";
+import debug from "debug";
+import { cosineSimilarity } from "@langchain/core/utils/math";
+import { DuplicateGroup, IndexUnit } from "../types";
+
+const log = debug("DryScan:DuplicationCache");
 
 /**
  * In-memory cache for duplicate comparison scores.
@@ -10,6 +14,13 @@ export class DuplicationCache {
   private readonly comparisons = new Map<string, number>();
   private readonly fileIndex = new Map<string, Set<string>>();
   private initialized = false;
+
+  /** Per-run similarity matrix from a single batched library call (reset each run). */
+  private embSimMatrix: number[][] = [];
+  /** Maps unit ID to its row/column index in embSimMatrix. */
+  private embSimIndex = new Map<string, number>();
+  /** Per-run memoization of parent unit similarity scores (reset each run). */
+  private parentSimCache = new Map<string, number>();
 
   static getInstance(): DuplicationCache {
     if (!DuplicationCache.instance) {
@@ -85,6 +96,51 @@ export class DuplicationCache {
     this.comparisons.clear();
     this.fileIndex.clear();
     this.initialized = false;
+    this.clearRunCaches();
+  }
+
+  /**
+   * Resets the per-run embedding and parent similarity caches.
+   * Should be called at the start of each findDuplicates run.
+   */
+  clearRunCaches(): void {
+    this.embSimMatrix = [];
+    this.embSimIndex.clear();
+    this.parentSimCache.clear();
+  }
+
+  /**
+   * Runs a single batched cosineSimilarity call and retains the raw matrix.
+   * Lookups are O(1) via an id-to-index map — no per-pair map writes.
+   */
+  buildEmbSimCache(units: IndexUnit[]): void {
+    this.embSimMatrix = [];
+    this.embSimIndex.clear();
+    const embedded = units.filter(u => Array.isArray(u.embedding) && u.embedding.length > 0);
+    if (embedded.length < 2) return;
+
+    const embeddings = embedded.map(u => u.embedding as number[]);
+    embedded.forEach((u, i) => this.embSimIndex.set(u.id, i));
+    this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
+    log("Built embedding similarity matrix: %d units", embedded.length);
+  }
+
+  /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
+  getEmbSim(id1: string, id2: string): number | undefined {
+    const i = this.embSimIndex.get(id1);
+    const j = this.embSimIndex.get(id2);
+    if (i === undefined || j === undefined) return undefined;
+    return this.embSimMatrix[i][j];
+  }
+
+  /** Returns the memoized parent similarity for the given stable key, if available. */
+  getParentSim(key: string): number | undefined {
+    return this.parentSimCache.get(key);
+  }
+
+  /** Stores a memoized parent similarity for the given stable key. */
+  setParentSim(key: string, sim: number): void {
+    this.parentSimCache.set(key, sim);
   }
 
   private addKeyForFile(filePath: string, key: string): void {
