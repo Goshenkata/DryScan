@@ -1,6 +1,6 @@
 import debug from "debug";
-import { cosineSimilarity } from "@langchain/core/utils/math";
 import { DuplicateGroup, IndexUnit } from "../types";
+import { parallelCosineSimilarity } from "./ParallelSimilarity";
 
 const log = debug("DryScan:DuplicationCache");
 
@@ -118,7 +118,7 @@ export class DuplicationCache {
    * cells from the old matrix and recomputes only dirty rows via one batched
    * cosineSimilarity call — O(d·n) where d = number of dirty units.
    */
-  buildEmbSimCache(units: IndexUnit[], dirtyPaths?: string[]): void {
+  async buildEmbSimCache(units: IndexUnit[], dirtyPaths?: string[]): Promise<void> {
     const embedded = units.filter(u => Array.isArray(u.embedding) && u.embedding.length > 0);
     if (embedded.length < 2) {
       this.embSimMatrix = [];
@@ -134,7 +134,7 @@ export class DuplicationCache {
     if (!dirtySet || !hasPriorMatrix) {
       // Full rebuild
       this.embSimIndex = newIndex;
-      this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
+      this.embSimMatrix = await parallelCosineSimilarity(embeddings, embeddings);
       log("Built full embedding similarity matrix: %d units", embedded.length);
       return;
     }
@@ -162,7 +162,7 @@ export class DuplicationCache {
 
     // Recompute dirty rows in one batched call
     const dirtyIndices = embedded.reduce<number[]>((acc, u, i) => (dirtyIds.has(u.id) ? [...acc, i] : acc), []);
-    const dirtyRows = cosineSimilarity(dirtyIndices.map(i => embeddings[i]), embeddings);
+    const dirtyRows = await parallelCosineSimilarity(dirtyIndices.map(i => embeddings[i]), embeddings);
     dirtyIndices.forEach((rowIdx, di) => {
       for (let j = 0; j < n; j++) {
         newMatrix[rowIdx][j] = dirtyRows[di][j];

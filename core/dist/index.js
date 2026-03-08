@@ -1,13 +1,7 @@
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __decorateClass = (decorators, target, key, kind) => {
-  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc(target, key) : target;
-  for (var i = decorators.length - 1, decorator; i >= 0; i--)
-    if (decorator = decorators[i])
-      result = (kind ? decorator(target, key, result) : decorator(result)) || result;
-  if (kind && result) __defProp(target, key, result);
-  return result;
-};
+import {
+  __decorateClass,
+  parallelCosineSimilarity
+} from "./chunk-ZZC4V5LV.js";
 
 // src/DryScan.ts
 import upath6 from "upath";
@@ -1156,7 +1150,6 @@ async function performIncrementalUpdate(repoPath, extractor, db) {
 
 // src/services/DuplicationCache.ts
 import debug4 from "debug";
-import { cosineSimilarity } from "@langchain/core/utils/math";
 var log4 = debug4("DryScan:DuplicationCache");
 var DuplicationCache = class _DuplicationCache {
   static instance = null;
@@ -1251,7 +1244,7 @@ var DuplicationCache = class _DuplicationCache {
    * cells from the old matrix and recomputes only dirty rows via one batched
    * cosineSimilarity call — O(d·n) where d = number of dirty units.
    */
-  buildEmbSimCache(units, dirtyPaths) {
+  async buildEmbSimCache(units, dirtyPaths) {
     const embedded = units.filter((u) => Array.isArray(u.embedding) && u.embedding.length > 0);
     if (embedded.length < 2) {
       this.embSimMatrix = [];
@@ -1264,7 +1257,7 @@ var DuplicationCache = class _DuplicationCache {
     const hasPriorMatrix = this.embSimMatrix.length > 0;
     if (!dirtySet || !hasPriorMatrix) {
       this.embSimIndex = newIndex;
-      this.embSimMatrix = cosineSimilarity(embeddings, embeddings);
+      this.embSimMatrix = await parallelCosineSimilarity(embeddings, embeddings);
       log4("Built full embedding similarity matrix: %d units", embedded.length);
       return;
     }
@@ -1284,7 +1277,7 @@ var DuplicationCache = class _DuplicationCache {
       }
     }
     const dirtyIndices = embedded.reduce((acc, u, i) => dirtyIds.has(u.id) ? [...acc, i] : acc, []);
-    const dirtyRows = cosineSimilarity(dirtyIndices.map((i) => embeddings[i]), embeddings);
+    const dirtyRows = await parallelCosineSimilarity(dirtyIndices.map((i) => embeddings[i]), embeddings);
     dirtyIndices.forEach((rowIdx, di) => {
       for (let j = 0; j < n; j++) {
         newMatrix[rowIdx][j] = dirtyRows[di][j];
@@ -1372,7 +1365,7 @@ var DuplicateService = class {
       return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
     const thresholds = this.resolveThresholds(config.threshold);
-    const duplicates = this.computeDuplicates(allUnits, thresholds, dirtyPaths);
+    const duplicates = await this.computeDuplicates(allUnits, thresholds, dirtyPaths);
     const filtered = duplicates.filter((g) => !this.isGroupExcluded(g));
     log6("Found %d duplicate groups (%d excluded)", filtered.length, duplicates.length - filtered.length);
     this.cache.update(filtered).catch((err) => log6("Cache update failed: %O", err));
@@ -1390,9 +1383,9 @@ var DuplicateService = class {
       class: clamp(fn + d.class - d.function)
     };
   }
-  computeDuplicates(units, thresholds, dirtyPaths) {
+  async computeDuplicates(units, thresholds, dirtyPaths) {
     this.cache.clearRunCaches();
-    this.cache.buildEmbSimCache(units, dirtyPaths);
+    await this.cache.buildEmbSimCache(units, dirtyPaths);
     const duplicates = [];
     const t0 = performance.now();
     for (const [type, typedUnits] of this.groupByType(units)) {

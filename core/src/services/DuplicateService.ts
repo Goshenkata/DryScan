@@ -30,7 +30,7 @@ export class DuplicateService {
     }
 
     const thresholds = this.resolveThresholds(config.threshold);
-    const duplicates = this.computeDuplicates(allUnits, thresholds, dirtyPaths);
+    const duplicates = await this.computeDuplicates(allUnits, thresholds, dirtyPaths);
     const filtered = duplicates.filter((g) => !this.isGroupExcluded(g));
     log("Found %d duplicate groups (%d excluded)", filtered.length, duplicates.length - filtered.length);
 
@@ -52,13 +52,13 @@ export class DuplicateService {
     };
   }
 
-  private computeDuplicates(
+  private async computeDuplicates(
     units: IndexUnit[],
     thresholds: { function: number; block: number; class: number },
     dirtyPaths?: string[]
-  ): DuplicateGroup[] {
+  ): Promise<DuplicateGroup[]> {
     this.cache.clearRunCaches();
-    this.cache.buildEmbSimCache(units, dirtyPaths);
+    await this.cache.buildEmbSimCache(units, dirtyPaths);
 
     const duplicates: DuplicateGroup[] = [];
     const t0 = performance.now();
