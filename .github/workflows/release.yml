@@ -44,6 +44,7 @@ jobs:
         run: |
           npm version "$VERSION" --no-git-tag-version --workspace core
           npm version "$VERSION" --no-git-tag-version --workspace cli
+          npm pkg set "dependencies.@goshenkata/dryscan-core=^$VERSION" --workspace cli
 
       - name: Commit version bump
         run: |
