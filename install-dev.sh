@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+echo "🗑️  Clearing npm cache..."
+npm cache clean --force
+
+echo "🗑️  Uninstalling old version..."
+npm uninstall -g @goshenkata/dryscan-cli 2>/dev/null || true
+
 echo "🔨 Building..."
 npm run build
 
@@ -9,8 +15,8 @@ cd cli
 tgz=$(npm pack 2>/dev/null | tail -n1)
 cd ..
 
-echo "🌍 Installing globally..."
-CXXFLAGS="-include cstdint" npm install -g "./cli/$tgz"
+echo "🌍 Installing globally from local tarball..."
+CXXFLAGS="-include cstdint" npm install -g --force --no-save "./cli/$tgz"
 
 echo "✅ Verifying installation..."
 if dryscan --help &>/dev/null; then
