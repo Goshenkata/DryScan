@@ -2,6 +2,7 @@
   "name": "dryscan-monorepo",
   "version": "0.1.0",
   "description": "A Semantic Code Duplication & Reuse Analyzer",
+  "private": true,
   "type": "module",
   "engines": {
     "node": ">=20.0.0"
@@ -16,13 +17,13 @@
     "clean": "npm run clean --workspaces",
     "test": "npm run test --workspaces",
     "coverage": "npm run coverage --workspaces",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "dryscan": "node ./cli/dist/cli.js",
+    "dryscan:dev": "npm --workspace @goshenkata/dryscan-cli exec -- tsx src/cli.ts"
   },
-  "overrides": {
-    "gpu.js@2.16.0": {
-      "gl": "8.1.6"
-    },
-    "gl": "8.1.6"
+  "dependencies": {
+    "@goshenkata/dryscan-cli": "workspace:*",
+    "@goshenkata/dryscan-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

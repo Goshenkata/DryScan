@@ -54,7 +54,6 @@
     "@langchain/ollama": "^1.1.0",
     "debug": "^4.4.3",
     "glob-gitignore": "^1.0.15",
-    "gpu.js": "^2.16.0",
     "ignore": "^7.0.5",
     "jsonschema": "^1.5.0",
     "minimatch": "^10.1.1",

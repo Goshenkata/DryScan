@@ -535,7 +535,7 @@ EOF
   echo "Second execution faster by ${delta_ms}ms (~${percent}%)"
 }
 
-@test "parallel cosine uses GPU backend and reports worker-vs-gpu timing" {
+@test "parallel cosine uses worker threads for large matrices" {
   npm --prefix "${REPO_ROOT}/core" run build >/dev/null
   [ "$?" -eq 0 ]
 
@@ -585,53 +585,15 @@ if (!Array.isArray(matrix) || matrix.length !== rows) {
 process.stdout.write(JSON.stringify({ elapsedMs: Number(elapsedMs.toFixed(2)), rows, cols, measuredRuns }));
 EOF
 
-  worker_out="${BATS_TMPDIR}/worker-bench-${BATS_TEST_NUMBER}.json"
-  worker_err="${BATS_TMPDIR}/worker-bench-${BATS_TEST_NUMBER}.err"
-  DEBUG="DryScan:ParallelSimilarity" DRYSCAN_REPO_ROOT="${REPO_ROOT}" DRYSCAN_SIM_BACKEND="worker" node "${bench_script}" >"${worker_out}" 2>"${worker_err}"
+  out_json="${BATS_TMPDIR}/worker-bench-${BATS_TEST_NUMBER}.json"
+  err_log="${BATS_TMPDIR}/worker-bench-${BATS_TEST_NUMBER}.err"
+
+  DRYSCAN_REPO_ROOT="${REPO_ROOT}" node "${bench_script}" >"${out_json}" 2>"${err_log}"
   [ "$?" -eq 0 ]
-  [[ "$(cat "${worker_err}")" == *"SIM_TRY backend=worker"* ]]
-  [[ "$(cat "${worker_err}")" == *"SIM_DONE backend=worker"* ]]
 
-  gpu_out="${BATS_TMPDIR}/gpu-bench-${BATS_TEST_NUMBER}.json"
-  gpu_err="${BATS_TMPDIR}/gpu-bench-${BATS_TEST_NUMBER}.err"
-  DEBUG="DryScan:ParallelSimilarity" DRYSCAN_REPO_ROOT="${REPO_ROOT}" DRYSCAN_SIM_BACKEND="gpu" node "${bench_script}" >"${gpu_out}" 2>"${gpu_err}"
-  [ "$?" -eq 0 ]
-  # Strict assertion: GPU path must finish on GPU with no fallback.
-  [[ "$(cat "${gpu_err}")" == *"SIM_TRY backend=gpu"* ]]
-  [[ "$(cat "${gpu_err}")" == *"SIM_DONE backend=gpu"* ]]
-  [[ "$(cat "${gpu_err}")" != *"SIM_FAIL backend=gpu"* ]]
-  [[ "$(cat "${gpu_err}")" != *"SIM_CHAIN continue_after=gpu-fail next=worker"* ]]
+  # Pre-GPU implementation should not emit SIM_* debug logs.
+  [[ "$(cat "${err_log}")" != *"SIM_"* ]]
 
-  worker_ms=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(d.elapsedMs));' "${worker_out}")
-  gpu_ms=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(d.elapsedMs));' "${gpu_out}")
-
-  delta_ms=$(node -e 'const w=Number(process.argv[1]); const g=Number(process.argv[2]); process.stdout.write(String(Math.round((w-g)*100)/100));' "${worker_ms}" "${gpu_ms}")
-  speedup_pct=$(node -e 'const w=Number(process.argv[1]); const g=Number(process.argv[2]); const p=((w-g)/w)*100; process.stdout.write(String(Math.round(p*100)/100));' "${worker_ms}" "${gpu_ms}")
-  direction=$(node -e 'const w=Number(process.argv[1]); const g=Number(process.argv[2]); if (g < w) process.stdout.write("faster"); else if (g > w) process.stdout.write("slower"); else process.stdout.write("equal");' "${worker_ms}" "${gpu_ms}")
-  
-  # Echo results and logs to stdout so bats captures them
-  cat <<BENCH
-================================================================================
-GPU Benchmark Results
-================================================================================
-Worker avg: ${worker_ms}ms
-GPU avg:    ${gpu_ms}ms
-Delta:      ${delta_ms}ms
-Speedup:    ${speedup_pct}% (gpu is ${direction})
-
-WORKER DEBUG LOGS:
-----------------
-BENCH
-  cat "${worker_err}"
-  
-  cat <<BENCH
-
-GPU DEBUG LOGS:
----------------
-BENCH
-  cat "${gpu_err}"
-  
-  cat <<BENCH
-================================================================================
-BENCH
+  elapsed=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if (typeof d.elapsedMs !== "number") process.exit(1); process.stdout.write(String(d.elapsedMs));' "${out_json}")
+  node -e 'const v=Number(process.argv[1]); if (!(v > 0)) process.exit(1);' "${elapsed}"
 }
