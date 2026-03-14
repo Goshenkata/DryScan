@@ -214,7 +214,7 @@ var JavaExtractor = class {
         const endLine = node.endPosition.row;
         const classLength = endLine - startLine;
         const skipClass = this.shouldSkip("class" /* CLASS */, className, classLength);
-        const classId = this.buildId("class" /* CLASS */, className, startLine, endLine);
+        const classId = this.buildId("class" /* CLASS */, fileRelPath, className, startLine, endLine);
         const code = this.stripComments(this.stripClassBody(node, source));
         const classUnit = {
           id: classId,
@@ -370,7 +370,7 @@ var JavaExtractor = class {
     const name = this.getFunctionName(node, source, parentClass) || "<anonymous>";
     const startLine = node.startPosition.row;
     const endLine = node.endPosition.row;
-    const id = this.buildId("function" /* FUNCTION */, name, startLine, endLine);
+    const id = this.buildId("function" /* FUNCTION */, file, name, startLine, endLine);
     const unit = {
       id,
       name,
@@ -400,7 +400,7 @@ var JavaExtractor = class {
           return;
         }
         if (lineCount >= indexConfig.blockMinLines) {
-          const id = this.buildId("block" /* BLOCK */, parentFunction.name, startLine, endLine);
+          const id = this.buildId("block" /* BLOCK */, file, parentFunction.name, startLine, endLine);
           const blockUnit = {
             id,
             name: parentFunction.name,
@@ -441,8 +441,27 @@ var JavaExtractor = class {
     }
     return code;
   }
-  buildId(type, name, startLine, endLine) {
-    return `${type}:${name}:${startLine}-${endLine}`;
+  buildId(type, filePath, name, startLine, endLine) {
+    const pathKey = this.pathKeyForId(filePath);
+    const scopedName = this.scopeNameWithPath(type, pathKey, name);
+    return `${type}:${scopedName}:${startLine}-${endLine}`;
+  }
+  pathKeyForId(filePath) {
+    const normalized = filePath.replace(/\\/g, "/");
+    return normalized.replace(/\.[^./]+$/, "");
+  }
+  scopeNameWithPath(type, pathKey, name) {
+    if (type === "class" /* CLASS */) {
+      return pathKey;
+    }
+    const classLeaf = pathKey.split("/").pop() ?? pathKey;
+    if (name === classLeaf) {
+      return pathKey;
+    }
+    if (name.startsWith(`${classLeaf}.`)) {
+      return `${pathKey}${name.slice(classLeaf.length)}`;
+    }
+    return `${pathKey}.${name}`;
   }
   extractArity(code) {
     const match = code.match(/^[^{]*?\(([^)]*)\)/s);
