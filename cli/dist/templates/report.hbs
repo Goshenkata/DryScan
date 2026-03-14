@@ -5,7 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DryScan Duplicates</title>
   <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlightjs-line-numbers.js/2.8.0/styles/line-numbers.min.css" />
+  <style>
+    /* Minimal line numbers styling */
+    .hljs.line-numbers {
+      padding-left: 3em;
+      position: relative;
+    }
+    .hljs.line-numbers::before {
+      content: attr(data-line-numbers);
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: var(--muted);
+      font-size: 0.85em;
+      line-height: inherit;
+      padding-right: 0.5em;
+      border-right: 1px solid var(--border);
+    }
+  </style>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
     :root {
@@ -223,7 +240,6 @@
   <script id="dup-data" type="application/json">{{{duplicatesJson}}}</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlightjs-line-numbers.js/2.8.0/highlightjs-line-numbers.min.js"></script>
   <div id="loading-indicator" style="display: none; text-align: center; padding: 20px; color: var(--muted);">Loading more...</div>
   <script type="module">
     const dataEl = document.getElementById('dup-data');
@@ -285,7 +301,13 @@
         container.appendChild(renderGroup(group, idx));
       });
       hljs.highlightAll();
-      document.querySelectorAll('code.hljs').forEach(el => hljs.lineNumbersBlock(el));
+      document.querySelectorAll('pre > code.line-numbers').forEach(el => {
+        try {
+          hljs.lineNumbersBlock(el);
+        } catch (err) {
+          console.warn('Could not apply line numbers to code block:', err);
+        }
+      });
     };
 
     const loadMore = async () => {
@@ -320,7 +342,14 @@
         });
         
         hljs.highlightAll();
-        document.querySelectorAll('code.hljs').forEach(el => hljs.lineNumbersBlock(el));
+        // Only apply line numbers to code elements that have line-numbers class and are in pre tags
+        document.querySelectorAll('pre > code.line-numbers').forEach(el => {
+          try {
+            hljs.lineNumbersBlock(el);
+          } catch (err) {
+            console.warn('Could not apply line numbers to code block:', err);
+          }
+        });
       } catch (err) {
         console.error('Error loading more duplicates:', err);
         toast('Failed to load more duplicates');
@@ -457,7 +486,11 @@
             modal.classList.add('active');
             return;
           }
-          const data = await res.json();
+          try {
+            hljs.lineNumbersBlock(modalCode);
+          } catch (err) {
+            console.warn('Could not apply line numbers to modal code block:', err);
+          }
           modalTitle.textContent = data.path;
           modalCode.textContent = data.content;
           modalCode.className = languageClass(data.path) + ' hljs line-numbers';
