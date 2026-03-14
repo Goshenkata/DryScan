@@ -48,12 +48,13 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@huggingface/inference": "^4.13.5",
     "@langchain/community": "^1.1.1",
     "@langchain/core": "^1.1.8",
     "@langchain/ollama": "^1.1.0",
-    "@huggingface/inference": "^4.13.5",
     "debug": "^4.4.3",
     "glob-gitignore": "^1.0.15",
+    "gpu.js": "^2.16.0",
     "ignore": "^7.0.5",
     "jsonschema": "^1.5.0",
     "minimatch": "^10.1.1",
@@ -65,7 +66,5 @@
     "typeorm": "^0.3.28",
     "upath": "^2.0.1"
   },
-  "optionalDependencies": {
-    "gpu.js": "^2.16.0"
-  }
+  "optionalDependencies": {}
 }

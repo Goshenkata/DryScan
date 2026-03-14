@@ -18,6 +18,12 @@
     "coverage": "npm run coverage --workspaces",
     "lint": "eslint ."
   },
+  "overrides": {
+    "gpu.js@2.16.0": {
+      "gl": "8.1.6"
+    },
+    "gl": "8.1.6"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/sinon": "^21.0.0",

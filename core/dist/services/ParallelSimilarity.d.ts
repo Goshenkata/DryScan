@@ -1,7 +1,6 @@
 /**
- * Computes cosineSimilarity(A, B) using worker threads for large inputs,
- * falling back to the synchronous library call for small ones.
- * B is packed into a SharedArrayBuffer shared across all workers — no copies.
+ * Computes cosine similarity using a deterministic backend chain.
+ * Default chain: GPU -> worker threads -> synchronous fallback.
  */
 declare function parallelCosineSimilarity(A: number[][], B: number[][]): Promise<number[][]>;
 
