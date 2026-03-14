@@ -65,7 +65,16 @@ export class DuplicateReportServer {
 
       if (url.pathname === "/api/duplicates") {
         res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify(this.state.duplicates));
+        // Support pagination with offset and limit query parameters
+        const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10));
+        const limit = Math.max(1, parseInt(url.searchParams.get("limit") || "100", 10));
+        const paginated = this.state.duplicates.slice(offset, offset + limit);
+        res.end(JSON.stringify({
+          data: paginated,
+          total: this.state.duplicates.length,
+          offset,
+          limit,
+        }));
         return;
       }
 
@@ -132,9 +141,11 @@ export class DuplicateReportServer {
       }
 
         res.setHeader("content-type", "text/html; charset=utf-8");
+        // Only embed first 100 duplicates in initial HTML for better performance
+        const initialDuplicates = this.state.duplicates.slice(0, 100);
         const html = template({
         thresholdPct: Math.round(this.state.threshold * 100),
-        duplicatesJson: JSON.stringify(this.state.duplicates),
+        duplicatesJson: JSON.stringify(initialDuplicates),
         score: buildScoreView(this.state.score),
         enableExclusions: true,
         });
@@ -242,9 +253,11 @@ function buildScoreView(score: DuplicationScore) {
  */
 export async function renderHtmlReport(options: HtmlRenderOptions): Promise<string> {
   const template = await loadTemplate();
+  // Only embed first 100 duplicates in initial HTML for better performance
+  const initialDuplicates = options.duplicates.slice(0, 100);
   return template({
     thresholdPct: Math.round(options.threshold * 100),
-    duplicatesJson: JSON.stringify(options.duplicates),
+    duplicatesJson: JSON.stringify(initialDuplicates),
     score: buildScoreView(options.score),
     enableExclusions: options.enableExclusions,
   });
