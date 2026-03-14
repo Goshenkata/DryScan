@@ -33,8 +33,8 @@ export class DuplicateService {
     }
 
     const thresholds = this.resolveThresholds(config.threshold);
-    const dirtySet = new Set(dirtyPaths);
-    const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
+  const dirtySet = new Set(dirtyPaths);
+  const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
 
     const reusableClean = canReuseFromReport
       ? this.reuseCleanPairsFromPreviousReport(previousReport as DuplicateReport, allUnits, dirtySet)

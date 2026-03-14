@@ -1170,11 +1170,205 @@ var UpdateService = class {
   }
 };
 
-// src/services/DuplicateService.ts
+// src/services/ExclusionService.ts
+import { minimatch } from "minimatch";
+var ExclusionService = class {
+  constructor(deps) {
+    this.deps = deps;
+  }
+  config;
+  async cleanupExcludedFiles() {
+    const config = await this.loadConfig();
+    if (!config.excludedPaths || config.excludedPaths.length === 0) return;
+    const units = await this.deps.db.getAllUnits();
+    const files = await this.deps.db.getAllFiles();
+    const unitPathsToRemove = /* @__PURE__ */ new Set();
+    for (const unit of units) {
+      if (this.pathExcluded(unit.filePath)) {
+        unitPathsToRemove.add(unit.filePath);
+      }
+    }
+    const filePathsToRemove = /* @__PURE__ */ new Set();
+    for (const file of files) {
+      if (this.pathExcluded(file.filePath)) {
+        filePathsToRemove.add(file.filePath);
+      }
+    }
+    const paths = [.../* @__PURE__ */ new Set([...unitPathsToRemove, ...filePathsToRemove])];
+    if (paths.length > 0) {
+      await this.deps.db.removeUnitsByFilePaths(paths);
+      await this.deps.db.removeFilesByFilePaths(paths);
+    }
+  }
+  async cleanExclusions() {
+    const config = await this.loadConfig();
+    const units = await this.deps.db.getAllUnits();
+    const actualPairsByType = {
+      ["class" /* CLASS */]: this.buildPairKeys(units, "class" /* CLASS */),
+      ["function" /* FUNCTION */]: this.buildPairKeys(units, "function" /* FUNCTION */),
+      ["block" /* BLOCK */]: this.buildPairKeys(units, "block" /* BLOCK */)
+    };
+    const kept = [];
+    const removed = [];
+    for (const entry of config.excludedPairs || []) {
+      const parsed = this.deps.pairing.parsePairKey(entry);
+      if (!parsed) {
+        removed.push(entry);
+        continue;
+      }
+      const candidates = actualPairsByType[parsed.type];
+      const matched = candidates.some((actual) => this.deps.pairing.pairKeyMatches(actual, parsed));
+      if (matched) {
+        kept.push(entry);
+      } else {
+        removed.push(entry);
+      }
+    }
+    const nextConfig = { ...config, excludedPairs: kept };
+    await configStore.save(this.deps.repoPath, nextConfig);
+    this.config = nextConfig;
+    return { removed: removed.length, kept: kept.length };
+  }
+  pathExcluded(filePath) {
+    const config = this.config;
+    if (!config || !config.excludedPaths || config.excludedPaths.length === 0) return false;
+    return config.excludedPaths.some((pattern) => minimatch(filePath, pattern, { dot: true }));
+  }
+  buildPairKeys(units, type) {
+    const typed = units.filter((u) => u.unitType === type);
+    const pairs = [];
+    for (let i = 0; i < typed.length; i++) {
+      for (let j = i + 1; j < typed.length; j++) {
+        const key = this.deps.pairing.pairKeyForUnits(typed[i], typed[j]);
+        const parsed = key ? this.deps.pairing.parsePairKey(key) : null;
+        if (parsed) {
+          pairs.push(parsed);
+        }
+      }
+    }
+    return pairs;
+  }
+  async loadConfig() {
+    this.config = await configStore.get(this.deps.repoPath);
+    return this.config;
+  }
+};
+
+// src/services/PairingService.ts
+import crypto3 from "crypto";
 import debug5 from "debug";
+import { minimatch as minimatch2 } from "minimatch";
+var log5 = debug5("DryScan:pairs");
+var PairingService = class {
+  constructor(indexUnitExtractor) {
+    this.indexUnitExtractor = indexUnitExtractor;
+  }
+  /**
+   * Creates a stable, order-independent key for two units of the same type.
+   * Returns null when units differ in type so callers can skip invalid pairs.
+   */
+  pairKeyForUnits(left, right) {
+    if (left.unitType !== right.unitType) {
+      log5("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
+      return null;
+    }
+    const type = left.unitType;
+    const leftLabel = this.unitLabel(left);
+    const rightLabel = this.unitLabel(right);
+    const [a, b] = [leftLabel, rightLabel].sort();
+    return `${type}|${a}|${b}`;
+  }
+  /**
+   * Parses a raw pair key into its components, returning null for malformed values.
+   * Sorting is applied so callers can compare pairs without worrying about order.
+   */
+  parsePairKey(value) {
+    const parts = value.split("|");
+    if (parts.length !== 3) {
+      log5("Invalid pair key format: %s", value);
+      return null;
+    }
+    const [typeRaw, leftRaw, rightRaw] = parts;
+    const type = this.stringToUnitType(typeRaw);
+    if (!type) {
+      log5("Unknown unit type in pair key: %s", typeRaw);
+      return null;
+    }
+    const [left, right] = [leftRaw, rightRaw].sort();
+    return { type, left, right, key: `${type}|${left}|${right}` };
+  }
+  /**
+   * Checks whether an actual pair key satisfies a pattern, with glob matching for class paths.
+   */
+  pairKeyMatches(actual, pattern) {
+    if (actual.type !== pattern.type) return false;
+    if (actual.type === "class" /* CLASS */) {
+      const forward = minimatch2(actual.left, pattern.left, { dot: true }) && minimatch2(actual.right, pattern.right, { dot: true });
+      const swapped = minimatch2(actual.left, pattern.right, { dot: true }) && minimatch2(actual.right, pattern.left, { dot: true });
+      return forward || swapped;
+    }
+    return actual.left === pattern.left && actual.right === pattern.right || actual.left === pattern.right && actual.right === pattern.left;
+  }
+  /**
+   * Derives a reversible, extractor-aware label for a unit.
+   * Extractors may override; fallback uses a fixed format per unit type.
+   */
+  unitLabel(unit) {
+    const extractor = this.findExtractor(unit.filePath);
+    const customLabel = extractor?.unitLabel?.(unit);
+    if (customLabel) return customLabel;
+    switch (unit.unitType) {
+      case "class" /* CLASS */:
+        return unit.filePath;
+      case "function" /* FUNCTION */:
+        return this.canonicalFunctionSignature(unit);
+      case "block" /* BLOCK */:
+        return this.normalizedBlockHash(unit);
+      default:
+        return unit.name;
+    }
+  }
+  findExtractor(filePath) {
+    return this.indexUnitExtractor.extractors.find((ex) => ex.supports(filePath));
+  }
+  canonicalFunctionSignature(unit) {
+    const arity = this.extractArity(unit.code);
+    return `${unit.name}(arity:${arity})`;
+  }
+  /**
+   * Normalizes block code (strips comments/whitespace) and hashes it for pair matching.
+   */
+  normalizedBlockHash(unit) {
+    const normalized = this.normalizeCode(unit.code);
+    return crypto3.createHash(BLOCK_HASH_ALGO).update(normalized).digest("hex");
+  }
+  stringToUnitType(value) {
+    if (value === "class" /* CLASS */) return "class" /* CLASS */;
+    if (value === "function" /* FUNCTION */) return "function" /* FUNCTION */;
+    if (value === "block" /* BLOCK */) return "block" /* BLOCK */;
+    return null;
+  }
+  extractArity(code) {
+    const match = code.match(/^[^{]*?\(([^)]*)\)/s);
+    if (!match) return 0;
+    const params = match[1].split(",").map((p) => p.trim()).filter(Boolean);
+    return params.length;
+  }
+  normalizeCode(code) {
+    const withoutBlockComments = code.replace(/\/\*[\s\S]*?\*\//g, "");
+    const withoutLineComments = withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
+    return withoutLineComments.replace(/\s+/g, "");
+  }
+};
+
+// src/DryScan.ts
+import { existsSync } from "fs";
+
+// src/services/DuplicateService.ts
+import debug6 from "debug";
 import shortUuid from "short-uuid";
 import { cosineSimilarity } from "@langchain/core/utils/math";
-var log5 = debug5("DryScan:DuplicateService");
+var log6 = debug6("DryScan:DuplicateService");
 var DuplicateService = class {
   constructor(deps) {
     this.deps = deps;
@@ -1188,7 +1382,7 @@ var DuplicateService = class {
     this.parentSimCache = /* @__PURE__ */ new Map();
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
-    log5("Starting duplicate analysis on %d units", allUnits.length);
+    log6("Starting duplicate analysis on %d units", allUnits.length);
     if (allUnits.length < 2) {
       return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
@@ -1203,14 +1397,14 @@ var DuplicateService = class {
     );
     const merged = this.mergeDuplicates(reusableClean, recomputed);
     const filtered = merged.filter((g) => !this.isGroupExcluded(g));
-    log5(
+    log6(
       "Found %d duplicate groups (%d excluded, %d reused)",
       filtered.length,
       merged.length - filtered.length,
       reusableClean.length
     );
     const score = this.computeDuplicationScore(filtered, allUnits);
-    log5("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+    log6("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
     return { duplicates: filtered, score };
   }
   resolveThresholds(functionThreshold) {
@@ -1225,14 +1419,14 @@ var DuplicateService = class {
   }
   computeDuplicates(units, thresholds, dirtySet) {
     if (dirtySet && dirtySet.size === 0) {
-      log5("Skipping recomputation: no dirty files and previous report threshold matches");
+      log6("Skipping recomputation: no dirty files and previous report threshold matches");
       return [];
     }
     const duplicates = [];
     const t0 = performance.now();
     for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
-      log5("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
+      log6("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
           const left = typedUnits[i];
@@ -1257,7 +1451,7 @@ var DuplicateService = class {
         }
       }
     }
-    log5("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
+    log6("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
   reuseCleanPairsFromPreviousReport(report, units, dirtySet) {
@@ -1268,7 +1462,7 @@ var DuplicateService = class {
       if (leftDirty || rightDirty) return false;
       return unitIds.has(group.left.id) && unitIds.has(group.right.id);
     });
-    log5("Reused %d clean-clean duplicate groups from previous report", reusable.length);
+    log6("Reused %d clean-clean duplicate groups from previous report", reusable.length);
     return reusable;
   }
   mergeDuplicates(reused, recomputed) {
@@ -1421,199 +1615,7 @@ var DuplicateService = class {
   }
 };
 
-// src/services/ExclusionService.ts
-import { minimatch } from "minimatch";
-var ExclusionService = class {
-  constructor(deps) {
-    this.deps = deps;
-  }
-  config;
-  async cleanupExcludedFiles() {
-    const config = await this.loadConfig();
-    if (!config.excludedPaths || config.excludedPaths.length === 0) return;
-    const units = await this.deps.db.getAllUnits();
-    const files = await this.deps.db.getAllFiles();
-    const unitPathsToRemove = /* @__PURE__ */ new Set();
-    for (const unit of units) {
-      if (this.pathExcluded(unit.filePath)) {
-        unitPathsToRemove.add(unit.filePath);
-      }
-    }
-    const filePathsToRemove = /* @__PURE__ */ new Set();
-    for (const file of files) {
-      if (this.pathExcluded(file.filePath)) {
-        filePathsToRemove.add(file.filePath);
-      }
-    }
-    const paths = [.../* @__PURE__ */ new Set([...unitPathsToRemove, ...filePathsToRemove])];
-    if (paths.length > 0) {
-      await this.deps.db.removeUnitsByFilePaths(paths);
-      await this.deps.db.removeFilesByFilePaths(paths);
-    }
-  }
-  async cleanExclusions() {
-    const config = await this.loadConfig();
-    const units = await this.deps.db.getAllUnits();
-    const actualPairsByType = {
-      ["class" /* CLASS */]: this.buildPairKeys(units, "class" /* CLASS */),
-      ["function" /* FUNCTION */]: this.buildPairKeys(units, "function" /* FUNCTION */),
-      ["block" /* BLOCK */]: this.buildPairKeys(units, "block" /* BLOCK */)
-    };
-    const kept = [];
-    const removed = [];
-    for (const entry of config.excludedPairs || []) {
-      const parsed = this.deps.pairing.parsePairKey(entry);
-      if (!parsed) {
-        removed.push(entry);
-        continue;
-      }
-      const candidates = actualPairsByType[parsed.type];
-      const matched = candidates.some((actual) => this.deps.pairing.pairKeyMatches(actual, parsed));
-      if (matched) {
-        kept.push(entry);
-      } else {
-        removed.push(entry);
-      }
-    }
-    const nextConfig = { ...config, excludedPairs: kept };
-    await configStore.save(this.deps.repoPath, nextConfig);
-    this.config = nextConfig;
-    return { removed: removed.length, kept: kept.length };
-  }
-  pathExcluded(filePath) {
-    const config = this.config;
-    if (!config || !config.excludedPaths || config.excludedPaths.length === 0) return false;
-    return config.excludedPaths.some((pattern) => minimatch(filePath, pattern, { dot: true }));
-  }
-  buildPairKeys(units, type) {
-    const typed = units.filter((u) => u.unitType === type);
-    const pairs = [];
-    for (let i = 0; i < typed.length; i++) {
-      for (let j = i + 1; j < typed.length; j++) {
-        const key = this.deps.pairing.pairKeyForUnits(typed[i], typed[j]);
-        const parsed = key ? this.deps.pairing.parsePairKey(key) : null;
-        if (parsed) {
-          pairs.push(parsed);
-        }
-      }
-    }
-    return pairs;
-  }
-  async loadConfig() {
-    this.config = await configStore.get(this.deps.repoPath);
-    return this.config;
-  }
-};
-
-// src/services/PairingService.ts
-import crypto3 from "crypto";
-import debug6 from "debug";
-import { minimatch as minimatch2 } from "minimatch";
-var log6 = debug6("DryScan:pairs");
-var PairingService = class {
-  constructor(indexUnitExtractor) {
-    this.indexUnitExtractor = indexUnitExtractor;
-  }
-  /**
-   * Creates a stable, order-independent key for two units of the same type.
-   * Returns null when units differ in type so callers can skip invalid pairs.
-   */
-  pairKeyForUnits(left, right) {
-    if (left.unitType !== right.unitType) {
-      log6("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
-      return null;
-    }
-    const type = left.unitType;
-    const leftLabel = this.unitLabel(left);
-    const rightLabel = this.unitLabel(right);
-    const [a, b] = [leftLabel, rightLabel].sort();
-    return `${type}|${a}|${b}`;
-  }
-  /**
-   * Parses a raw pair key into its components, returning null for malformed values.
-   * Sorting is applied so callers can compare pairs without worrying about order.
-   */
-  parsePairKey(value) {
-    const parts = value.split("|");
-    if (parts.length !== 3) {
-      log6("Invalid pair key format: %s", value);
-      return null;
-    }
-    const [typeRaw, leftRaw, rightRaw] = parts;
-    const type = this.stringToUnitType(typeRaw);
-    if (!type) {
-      log6("Unknown unit type in pair key: %s", typeRaw);
-      return null;
-    }
-    const [left, right] = [leftRaw, rightRaw].sort();
-    return { type, left, right, key: `${type}|${left}|${right}` };
-  }
-  /**
-   * Checks whether an actual pair key satisfies a pattern, with glob matching for class paths.
-   */
-  pairKeyMatches(actual, pattern) {
-    if (actual.type !== pattern.type) return false;
-    if (actual.type === "class" /* CLASS */) {
-      const forward = minimatch2(actual.left, pattern.left, { dot: true }) && minimatch2(actual.right, pattern.right, { dot: true });
-      const swapped = minimatch2(actual.left, pattern.right, { dot: true }) && minimatch2(actual.right, pattern.left, { dot: true });
-      return forward || swapped;
-    }
-    return actual.left === pattern.left && actual.right === pattern.right || actual.left === pattern.right && actual.right === pattern.left;
-  }
-  /**
-   * Derives a reversible, extractor-aware label for a unit.
-   * Extractors may override; fallback uses a fixed format per unit type.
-   */
-  unitLabel(unit) {
-    const extractor = this.findExtractor(unit.filePath);
-    const customLabel = extractor?.unitLabel?.(unit);
-    if (customLabel) return customLabel;
-    switch (unit.unitType) {
-      case "class" /* CLASS */:
-        return unit.filePath;
-      case "function" /* FUNCTION */:
-        return this.canonicalFunctionSignature(unit);
-      case "block" /* BLOCK */:
-        return this.normalizedBlockHash(unit);
-      default:
-        return unit.name;
-    }
-  }
-  findExtractor(filePath) {
-    return this.indexUnitExtractor.extractors.find((ex) => ex.supports(filePath));
-  }
-  canonicalFunctionSignature(unit) {
-    const arity = this.extractArity(unit.code);
-    return `${unit.name}(arity:${arity})`;
-  }
-  /**
-   * Normalizes block code (strips comments/whitespace) and hashes it for pair matching.
-   */
-  normalizedBlockHash(unit) {
-    const normalized = this.normalizeCode(unit.code);
-    return crypto3.createHash(BLOCK_HASH_ALGO).update(normalized).digest("hex");
-  }
-  stringToUnitType(value) {
-    if (value === "class" /* CLASS */) return "class" /* CLASS */;
-    if (value === "function" /* FUNCTION */) return "function" /* FUNCTION */;
-    if (value === "block" /* BLOCK */) return "block" /* BLOCK */;
-    return null;
-  }
-  extractArity(code) {
-    const match = code.match(/^[^{]*?\(([^)]*)\)/s);
-    if (!match) return 0;
-    const params = match[1].split(",").map((p) => p.trim()).filter(Boolean);
-    return params.length;
-  }
-  normalizeCode(code) {
-    const withoutBlockComments = code.replace(/\/\*[\s\S]*?\*\//g, "");
-    const withoutLineComments = withoutBlockComments.replace(/\/\/[^\n\r]*/g, "");
-    return withoutLineComments.replace(/\s+/g, "");
-  }
-};
-
 // src/DryScan.ts
-import { existsSync } from "fs";
 var DryScan = class {
   repoPath;
   extractor;

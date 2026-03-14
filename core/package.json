@@ -1,10 +1,13 @@
 {
   "name": "@goshenkata/dryscan-core",
-  "version": "1.2.6",
+  "version": "1.2.10",
   "description": "Core library for DryScan - semantic code duplication analyzer",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",

@@ -6,13 +6,13 @@ import { defaultExtractors, IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { RepositoryInitializer, InitOptions as InitServiceOptions } from "./services/RepositoryInitializer";
 import { UpdateService } from "./services/UpdateService";
-import { DuplicateService } from "./services/DuplicateService";
 import { ExclusionService } from "./services/ExclusionService";
 import { DryScanServiceDeps } from "./services/types";
 import { configStore } from "./config/configStore";
 import { DryConfig } from "./types";
 import { PairingService } from "./services/PairingService";
 import { existsSync } from "fs";
+import { DuplicateService } from "./services/DuplicateService";
 
 export type InitOptions = InitServiceOptions;
 
