@@ -1,7 +1,6 @@
 import {
-  __decorateClass,
-  parallelCosineSimilarity
-} from "./chunk-ZZC4V5LV.js";
+  __decorateClass
+} from "./chunk-EUXUH3YW.js";
 
 // src/DryScan.ts
 import upath6 from "upath";
@@ -10,6 +9,7 @@ import fs7 from "fs/promises";
 // src/const.ts
 var DRYSCAN_DIR = ".dry";
 var INDEX_DB = "index.db";
+var REPORTS_DIR = "reports";
 var FILE_CHECKSUM_ALGO = "md5";
 var BLOCK_HASH_ALGO = "sha1";
 
@@ -1029,7 +1029,7 @@ var RepositoryInitializer = class {
 };
 
 // src/services/UpdateService.ts
-import debug5 from "debug";
+import debug4 from "debug";
 
 // src/DryScanUpdater.ts
 import path4 from "path";
@@ -1148,177 +1148,8 @@ async function performIncrementalUpdate(repoPath, extractor, db) {
   return changeSet;
 }
 
-// src/services/DuplicationCache.ts
-import debug4 from "debug";
-var log4 = debug4("DryScan:DuplicationCache");
-var DuplicationCache = class _DuplicationCache {
-  static instance = null;
-  comparisons = /* @__PURE__ */ new Map();
-  fileIndex = /* @__PURE__ */ new Map();
-  initialized = false;
-  /** Per-run similarity matrix from a single batched library call (reset each run). */
-  embSimMatrix = [];
-  /** Maps unit ID to its row/column index in embSimMatrix. */
-  embSimIndex = /* @__PURE__ */ new Map();
-  /** Per-run memoization of parent unit similarity scores (reset each run). */
-  parentSimCache = /* @__PURE__ */ new Map();
-  static getInstance() {
-    if (!_DuplicationCache.instance) {
-      _DuplicationCache.instance = new _DuplicationCache();
-    }
-    return _DuplicationCache.instance;
-  }
-  /**
-   * Updates the cache with fresh duplicate groups. Not awaited by callers to avoid blocking.
-   */
-  async update(groups) {
-    if (!groups) return;
-    for (const group of groups) {
-      const key = this.makeKey(group.left.id, group.right.id);
-      this.comparisons.set(key, group.similarity);
-      this.addKeyForFile(group.left.filePath, key);
-      this.addKeyForFile(group.right.filePath, key);
-    }
-    this.initialized = this.initialized || groups.length > 0;
-  }
-  /**
-   * Retrieves a cached similarity if present and valid for both file paths.
-   * Returns null when the cache has not been initialized or when the pair is missing.
-   */
-  get(leftId, rightId, leftFilePath, rightFilePath) {
-    if (!this.initialized) return null;
-    const key = this.makeKey(leftId, rightId);
-    if (!this.fileHasKey(leftFilePath, key) || !this.fileHasKey(rightFilePath, key)) {
-      return null;
-    }
-    const value = this.comparisons.get(key);
-    return typeof value === "number" ? value : null;
-  }
-  /**
-   * Invalidates all cached comparisons involving the provided file paths.
-   */
-  async invalidate(paths) {
-    if (!this.initialized || !paths || paths.length === 0) return;
-    const unique = new Set(paths);
-    for (const filePath of unique) {
-      const keys = this.fileIndex.get(filePath);
-      if (!keys) continue;
-      for (const key of keys) {
-        this.comparisons.delete(key);
-        for (const [otherPath, otherKeys] of this.fileIndex.entries()) {
-          if (otherKeys.delete(key) && otherKeys.size === 0) {
-            this.fileIndex.delete(otherPath);
-          }
-        }
-      }
-      this.fileIndex.delete(filePath);
-    }
-    if (this.comparisons.size === 0) {
-      this.initialized = false;
-    }
-  }
-  /**
-   * Clears all cached data. Intended for test setup.
-   */
-  clear() {
-    this.comparisons.clear();
-    this.fileIndex.clear();
-    this.initialized = false;
-    this.embSimMatrix = [];
-    this.embSimIndex.clear();
-    this.clearRunCaches();
-  }
-  /**
-   * Resets per-run memoization (parent similarities).
-   * The embedding matrix is intentionally preserved so incremental runs can
-   * reuse clean×clean values across calls.
-   */
-  clearRunCaches() {
-    this.parentSimCache.clear();
-  }
-  /**
-   * Builds or incrementally updates the embedding similarity matrix.
-   *
-   * Full rebuild (default): replaces the entire matrix — O(n²).
-   * Incremental (dirtyPaths provided + prior matrix exists): copies clean×clean
-   * cells from the old matrix and recomputes only dirty rows via one batched
-   * cosineSimilarity call — O(d·n) where d = number of dirty units.
-   */
-  async buildEmbSimCache(units, dirtyPaths) {
-    const embedded = units.filter((u) => Array.isArray(u.embedding) && u.embedding.length > 0);
-    if (embedded.length < 2) {
-      this.embSimMatrix = [];
-      this.embSimIndex.clear();
-      return;
-    }
-    const embeddings = embedded.map((u) => u.embedding);
-    const newIndex = new Map(embedded.map((u, i) => [u.id, i]));
-    const dirtySet = dirtyPaths ? new Set(dirtyPaths) : null;
-    const hasPriorMatrix = this.embSimMatrix.length > 0;
-    if (!dirtySet || !hasPriorMatrix) {
-      this.embSimIndex = newIndex;
-      this.embSimMatrix = await parallelCosineSimilarity(embeddings, embeddings);
-      log4("Built full embedding similarity matrix: %d units", embedded.length);
-      return;
-    }
-    const dirtyIds = new Set(embedded.filter((u) => dirtySet.has(u.filePath)).map((u) => u.id));
-    if (dirtyIds.size === 0) {
-      log4("Matrix reused: no dirty units detected");
-      return;
-    }
-    const n = embedded.length;
-    const newMatrix = Array.from({ length: n }, () => new Array(n).fill(0));
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        if (dirtyIds.has(embedded[i].id) || dirtyIds.has(embedded[j].id)) continue;
-        const oi = this.embSimIndex.get(embedded[i].id);
-        const oj = this.embSimIndex.get(embedded[j].id);
-        if (oi !== void 0 && oj !== void 0) newMatrix[i][j] = this.embSimMatrix[oi][oj];
-      }
-    }
-    const dirtyIndices = embedded.reduce((acc, u, i) => dirtyIds.has(u.id) ? [...acc, i] : acc, []);
-    const dirtyRows = await parallelCosineSimilarity(dirtyIndices.map((i) => embeddings[i]), embeddings);
-    dirtyIndices.forEach((rowIdx, di) => {
-      for (let j = 0; j < n; j++) {
-        newMatrix[rowIdx][j] = dirtyRows[di][j];
-        newMatrix[j][rowIdx] = dirtyRows[di][j];
-      }
-    });
-    this.embSimIndex = newIndex;
-    this.embSimMatrix = newMatrix;
-    log4("Incremental matrix update: %d dirty unit(s) out of %d total", dirtyIds.size, n);
-  }
-  /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
-  getEmbSim(id1, id2) {
-    const i = this.embSimIndex.get(id1);
-    const j = this.embSimIndex.get(id2);
-    if (i === void 0 || j === void 0) return void 0;
-    return this.embSimMatrix[i][j];
-  }
-  /** Returns the memoized parent similarity for the given stable key, if available. */
-  getParentSim(key) {
-    return this.parentSimCache.get(key);
-  }
-  /** Stores a memoized parent similarity for the given stable key. */
-  setParentSim(key, sim) {
-    this.parentSimCache.set(key, sim);
-  }
-  addKeyForFile(filePath, key) {
-    const current = this.fileIndex.get(filePath) ?? /* @__PURE__ */ new Set();
-    current.add(key);
-    this.fileIndex.set(filePath, current);
-  }
-  fileHasKey(filePath, key) {
-    const keys = this.fileIndex.get(filePath);
-    return keys ? keys.has(key) : false;
-  }
-  makeKey(leftId, rightId) {
-    return [leftId, rightId].sort().join("::");
-  }
-};
-
 // src/services/UpdateService.ts
-var log5 = debug5("DryScan:UpdateService");
+var log4 = debug4("DryScan:UpdateService");
 var UpdateService = class {
   constructor(deps, exclusionService) {
     this.deps = deps;
@@ -1327,50 +1158,59 @@ var UpdateService = class {
   /** Returns the list of file paths that were modified or deleted (dirty). */
   async updateIndex() {
     const extractor = this.deps.extractor;
-    const cache = DuplicationCache.getInstance();
     try {
       const changeSet = await performIncrementalUpdate(this.deps.repoPath, extractor, this.deps.db);
       await this.exclusionService.cleanupExcludedFiles();
       const dirtyPaths = [...changeSet.changed, ...changeSet.deleted, ...changeSet.added];
-      await cache.invalidate(dirtyPaths);
       return dirtyPaths;
     } catch (err) {
-      log5("Error during index update:", err);
+      log4("Error during index update:", err);
       throw err;
     }
   }
 };
 
 // src/services/DuplicateService.ts
-import debug6 from "debug";
+import debug5 from "debug";
 import shortUuid from "short-uuid";
-var log6 = debug6("DryScan:DuplicateService");
+import { cosineSimilarity } from "@langchain/core/utils/math";
+var log5 = debug5("DryScan:DuplicateService");
 var DuplicateService = class {
   constructor(deps) {
     this.deps = deps;
   }
   config;
-  cache = DuplicationCache.getInstance();
-  /**
-   * @param dirtyPaths - File paths changed since last run. When provided, only
-   *   dirty×all similarities are recomputed; clean×clean values are reused from
-   *   the existing matrix.  Pass undefined (or omit) for a full rebuild.
-   */
-  async findDuplicates(config, dirtyPaths) {
+  similarityCache = /* @__PURE__ */ new Map();
+  parentSimCache = /* @__PURE__ */ new Map();
+  async findDuplicates(config, dirtyPaths = [], previousReport) {
     this.config = config;
+    this.similarityCache = /* @__PURE__ */ new Map();
+    this.parentSimCache = /* @__PURE__ */ new Map();
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
-    log6("Starting duplicate analysis on %d units", allUnits.length);
+    log5("Starting duplicate analysis on %d units", allUnits.length);
     if (allUnits.length < 2) {
       return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
     const thresholds = this.resolveThresholds(config.threshold);
-    const duplicates = await this.computeDuplicates(allUnits, thresholds, dirtyPaths);
-    const filtered = duplicates.filter((g) => !this.isGroupExcluded(g));
-    log6("Found %d duplicate groups (%d excluded)", filtered.length, duplicates.length - filtered.length);
-    this.cache.update(filtered).catch((err) => log6("Cache update failed: %O", err));
+    const dirtySet = new Set(dirtyPaths);
+    const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
+    const reusableClean = canReuseFromReport ? this.reuseCleanPairsFromPreviousReport(previousReport, allUnits, dirtySet) : [];
+    const recomputed = this.computeDuplicates(
+      allUnits,
+      thresholds,
+      canReuseFromReport ? dirtySet : null
+    );
+    const merged = this.mergeDuplicates(reusableClean, recomputed);
+    const filtered = merged.filter((g) => !this.isGroupExcluded(g));
+    log5(
+      "Found %d duplicate groups (%d excluded, %d reused)",
+      filtered.length,
+      merged.length - filtered.length,
+      reusableClean.length
+    );
     const score = this.computeDuplicationScore(filtered, allUnits);
-    log6("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+    log5("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
     return { duplicates: filtered, score };
   }
   resolveThresholds(functionThreshold) {
@@ -1383,21 +1223,26 @@ var DuplicateService = class {
       class: clamp(fn + d.class - d.function)
     };
   }
-  async computeDuplicates(units, thresholds, dirtyPaths) {
-    this.cache.clearRunCaches();
-    await this.cache.buildEmbSimCache(units, dirtyPaths);
+  computeDuplicates(units, thresholds, dirtySet) {
+    if (dirtySet && dirtySet.size === 0) {
+      log5("Skipping recomputation: no dirty files and previous report threshold matches");
+      return [];
+    }
     const duplicates = [];
     const t0 = performance.now();
     for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
-      log6("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
+      log5("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
-          const left = typedUnits[i], right = typedUnits[j];
+          const left = typedUnits[i];
+          const right = typedUnits[j];
           if (this.shouldSkipComparison(left, right)) continue;
-          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
+          if (dirtySet && !dirtySet.has(left.filePath) && !dirtySet.has(right.filePath)) {
+            continue;
+          }
           const hasEmbeddings = left.embedding?.length && right.embedding?.length;
-          const similarity = cached ?? (hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0);
+          const similarity = hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0;
           if (similarity < threshold) continue;
           const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
           if (!exclusionString) continue;
@@ -1412,8 +1257,32 @@ var DuplicateService = class {
         }
       }
     }
-    log6("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
+    log5("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
     return duplicates.sort((a, b) => b.similarity - a.similarity);
+  }
+  reuseCleanPairsFromPreviousReport(report, units, dirtySet) {
+    const unitIds = new Set(units.map((u) => u.id));
+    const reusable = report.duplicates.filter((group) => {
+      const leftDirty = dirtySet.has(group.left.filePath);
+      const rightDirty = dirtySet.has(group.right.filePath);
+      if (leftDirty || rightDirty) return false;
+      return unitIds.has(group.left.id) && unitIds.has(group.right.id);
+    });
+    log5("Reused %d clean-clean duplicate groups from previous report", reusable.length);
+    return reusable;
+  }
+  mergeDuplicates(reused, recomputed) {
+    const merged = /* @__PURE__ */ new Map();
+    for (const group of reused) {
+      merged.set(this.groupKey(group), group);
+    }
+    for (const group of recomputed) {
+      merged.set(this.groupKey(group), group);
+    }
+    return Array.from(merged.values()).sort((a, b) => b.similarity - a.similarity);
+  }
+  groupKey(group) {
+    return [group.left.id, group.right.id].sort().join("::");
   }
   isGroupExcluded(group) {
     const config = this.config;
@@ -1451,8 +1320,6 @@ var DuplicateService = class {
     if ((w.self * selfSim + (hasPF ? w.parentFunction : 0) + (hasPC ? w.parentClass : 0)) / total < threshold) return 0;
     return (w.self * selfSim + (hasPF ? w.parentFunction * this.parentSimilarity(left, right, "function" /* FUNCTION */) : 0) + (hasPC ? w.parentClass * this.parentSimilarity(left, right, "class" /* CLASS */) : 0)) / total;
   }
-  /** Groups all units by type for the comparison loop. Units without embeddings are included
-   * so that cache hits can still be returned for pairs whose embeddings were cleared. */
   groupByType(units) {
     const byType = /* @__PURE__ */ new Map();
     for (const unit of units) {
@@ -1477,21 +1344,32 @@ var DuplicateService = class {
     return !!this.findParent(left, type) && !!this.findParent(right, type);
   }
   parentSimilarity(left, right, type) {
-    const lp = this.findParent(left, type), rp = this.findParent(right, type);
+    const lp = this.findParent(left, type);
+    const rp = this.findParent(right, type);
     if (!lp || !rp) return 0;
     const key = lp.id < rp.id ? `${lp.id}::${rp.id}` : `${rp.id}::${lp.id}`;
-    const cached = this.cache.getParentSim(key);
+    const cached = this.parentSimCache.get(key);
     if (cached !== void 0) return cached;
     const sim = this.similarity(lp, rp);
-    this.cache.setParentSim(key, sim);
+    this.parentSimCache.set(key, sim);
     return sim;
   }
-  /** Resolves similarity via the pre-computed embedding matrix, falling back to best child match. */
   similarity(left, right) {
-    return this.cache.getEmbSim(left.id, right.id) ?? this.childSimilarity(left, right);
+    const key = left.id < right.id ? `${left.id}::${right.id}` : `${right.id}::${left.id}`;
+    const cached = this.similarityCache.get(key);
+    if (cached !== void 0) return cached;
+    let value = 0;
+    if (left.embedding?.length && right.embedding?.length) {
+      value = cosineSimilarity([left.embedding], [right.embedding])[0][0] ?? 0;
+    } else {
+      value = this.childSimilarity(left, right);
+    }
+    this.similarityCache.set(key, value);
+    return value;
   }
   childSimilarity(left, right) {
-    const lc = left.children ?? [], rc = right.children ?? [];
+    const lc = left.children ?? [];
+    const rc = right.children ?? [];
     if (!lc.length || !rc.length) return 0;
     let best = 0;
     for (const l of lc) {
@@ -1629,9 +1507,9 @@ var ExclusionService = class {
 
 // src/services/PairingService.ts
 import crypto3 from "crypto";
-import debug7 from "debug";
+import debug6 from "debug";
 import { minimatch as minimatch2 } from "minimatch";
-var log7 = debug7("DryScan:pairs");
+var log6 = debug6("DryScan:pairs");
 var PairingService = class {
   constructor(indexUnitExtractor) {
     this.indexUnitExtractor = indexUnitExtractor;
@@ -1642,7 +1520,7 @@ var PairingService = class {
    */
   pairKeyForUnits(left, right) {
     if (left.unitType !== right.unitType) {
-      log7("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
+      log6("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
       return null;
     }
     const type = left.unitType;
@@ -1658,13 +1536,13 @@ var PairingService = class {
   parsePairKey(value) {
     const parts = value.split("|");
     if (parts.length !== 3) {
-      log7("Invalid pair key format: %s", value);
+      log6("Invalid pair key format: %s", value);
       return null;
     }
     const [typeRaw, leftRaw, rightRaw] = parts;
     const type = this.stringToUnitType(typeRaw);
     if (!type) {
-      log7("Unknown unit type in pair key: %s", typeRaw);
+      log6("Unknown unit type in pair key: %s", typeRaw);
       return null;
     }
     const [left, right] = [leftRaw, rightRaw].sort();
@@ -1809,7 +1687,7 @@ var DryScan = class {
   async buildDuplicateReport() {
     const config = await this.loadConfig();
     const analysis = await this.findDuplicates(config);
-    return {
+    const report = {
       version: 1,
       generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
       threshold: config.threshold,
@@ -1817,6 +1695,8 @@ var DryScan = class {
       score: analysis.score,
       duplicates: analysis.duplicates
     };
+    await this.saveReport(report);
+    return report;
   }
   /**
    * Finds duplicate code blocks using cosine similarity on embeddings.
@@ -1833,9 +1713,13 @@ var DryScan = class {
     const dirtyPaths = await this.updateIndex();
     const updateDuration = Date.now() - updateStart;
     console.log(`[DryScan] Index update  took ${updateDuration}ms.`);
+    const previousReport = await this.loadLatestReport();
+    if (previousReport?.threshold === config.threshold) {
+      console.log("[DryScan] Reusing clean-clean duplicates from latest report (threshold unchanged).");
+    }
     console.log("[DryScan] Detecting duplicates...");
     const dupStart = Date.now();
-    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths);
+    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths, previousReport);
     const dupDuration = Date.now() - dupStart;
     console.log(`[DryScan] Duplicate detection took ${dupDuration}ms.`);
     return result;
@@ -1856,6 +1740,40 @@ var DryScan = class {
   }
   async loadConfig() {
     return configStore.get(this.repoPath);
+  }
+  async saveReport(report) {
+    const reportDir = upath6.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
+    await fs7.mkdir(reportDir, { recursive: true });
+    const safeTimestamp = report.generatedAt.replace(/[:.]/g, "-");
+    const reportPath = upath6.join(reportDir, `dupes-${safeTimestamp}.json`);
+    await fs7.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
+  }
+  async loadLatestReport() {
+    const reportDir = upath6.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
+    let entries;
+    try {
+      entries = await fs7.readdir(reportDir);
+    } catch (err) {
+      if (err?.code === "ENOENT") return null;
+      throw err;
+    }
+    const jsonReports = entries.filter((name) => name.endsWith(".json"));
+    if (jsonReports.length === 0) return null;
+    const withStats = await Promise.all(
+      jsonReports.map(async (name) => {
+        const fullPath = upath6.join(reportDir, name);
+        const stat = await fs7.stat(fullPath);
+        return { fullPath, mtimeMs: stat.mtimeMs };
+      })
+    );
+    withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const latest = withStats[0];
+    const raw = await fs7.readFile(latest.fullPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.duplicates) || typeof parsed.threshold !== "number") {
+      return null;
+    }
+    return parsed;
   }
 };
 export {

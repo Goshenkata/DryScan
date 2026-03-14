@@ -1,6 +1,5 @@
 import { resolve } from 'path';
 import { DryScan, configStore } from '@goshenkata/dryscan-core';
-import { writeDuplicateReport } from './reports.js';
 import { DuplicateReportServer, renderHtmlReport } from './uiServer.js';
 const UI_PORT = 3000;
 function formatCodeSnippet(code, maxLines = 15) {
@@ -15,7 +14,7 @@ function formatCodeSnippet(code, maxLines = 15) {
         .join('\n');
     return formatted + (truncated ? `\n  ... │ (${lines.length - maxLines} more lines)` : '');
 }
-function formatDuplicates(report, reportPath) {
+function formatDuplicates(report) {
     const { duplicates, score, threshold } = report;
     console.log('\n' + '═'.repeat(80));
     console.log(`\n📊 DUPLICATION SCORE: ${score.score.toFixed(2)}% - ${score.grade}`);
@@ -23,9 +22,6 @@ function formatDuplicates(report, reportPath) {
     console.log(`   Duplicate Lines (weighted): ${score.duplicateLines.toLocaleString()}`);
     console.log(`   Duplicate Groups: ${score.duplicateGroups}`);
     console.log('\n' + '═'.repeat(80));
-    if (reportPath) {
-        console.log(`\n🗂  Report saved to ${reportPath}`);
-    }
     if (duplicates.length === 0) {
         console.log(`\n✓ No duplicates found (threshold: ${(threshold * 100).toFixed(0)}%)\n`);
         return;
@@ -67,7 +63,6 @@ export async function handleDupesCommand(path, options) {
     try {
         const scanner = new DryScan(repoPath);
         const report = await scanner.buildDuplicateReport();
-        const reportPath = await writeDuplicateReport(repoPath, report);
         if (options.ui) {
             const server = new DuplicateReportServer({
                 repoPath,
@@ -90,13 +85,10 @@ export async function handleDupesCommand(path, options) {
             return;
         }
         if (options.json) {
-            originalLog(JSON.stringify({
-                ...report,
-                reportPath,
-            }, null, 2));
+            originalLog(JSON.stringify(report, null, 2));
         }
         else {
-            formatDuplicates(report, reportPath);
+            formatDuplicates(report);
         }
     }
     finally {

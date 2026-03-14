@@ -1,8 +1,5 @@
 import { expect } from "chai";
-import sinon from "sinon";
-import debugLib from "debug";
 import { DryScan } from "../src/DryScan.ts";
-import { DuplicationCache } from "../src/services/DuplicationCache.ts";
 import { IndexUnitType } from "../src/types.ts";
 import { configStore } from "../src/config/configStore.ts";
 import { buildTestConfig } from "./helpers/testConfig.mjs";
@@ -45,7 +42,6 @@ describe("DryScan - Duplicate Detection", function() {
 
   afterEach(async () => {
     // Clean up
-    DuplicationCache.getInstance().clear();
     await fs.rm(testDir, { recursive: true, force: true });
   });
 
@@ -55,7 +51,7 @@ describe("DryScan - Duplicate Detection", function() {
         isInitialized: () => true,
         getAllUnits: async () => units,
       }, configOverrides);
-      scanner.updateIndex = async () => {};
+      scanner.updateIndex = async () => [];
       return scanner;
     }
 
@@ -187,32 +183,32 @@ describe("DryScan - Duplicate Detection", function() {
       expect(report.grade).to.equal("Critical");
     });
 
-    it("reuses similarity matrix across calls when no paths are dirty", async () => {
-      const units = [
-        makeUnit("1", "fn1", [1, 0]),
-        makeUnit("2", "fn2", [1, 0]),
-      ];
+    it("second execution is faster with report reuse and logs speedup", async () => {
+      const dims = 64;
+      const totalUnits = 220;
+      const units = Array.from({ length: totalUnits }, (_, i) => {
+        const group = i % 10;
+        const embedding = Array.from({ length: dims }, (_, d) => (group + d) % 13 / 13);
+        return makeUnit(`${i + 1}`, `fn${i + 1}`, embedding);
+      });
+
       const scanner = await stubbedScanner(units, { threshold: 0.7 });
 
-      // First call: full rebuild.
-      scanner.updateIndex = async () => ["fn1.js"];
-      const first = await scanner.buildDuplicateReport();
-      expect(first.duplicates.length).to.be.at.least(1);
+      scanner.updateIndex = async () => ["dirty-a.js"];
+      const firstStart = performance.now();
+      await scanner.buildDuplicateReport();
+      const firstMs = performance.now() - firstStart;
 
-      // Second call: enable debug output, stub stderr, assert "Matrix reused" log.
-      debugLib.enable("DryScan:DuplicationCache");
-      const stderrStub = sinon.stub(process.stderr, "write");
-      try {
-        scanner.updateIndex = async () => [];
-        const second = await scanner.buildDuplicateReport();
-        expect(second.duplicates.length).to.equal(first.duplicates.length);
+      scanner.updateIndex = async () => [];
+      const secondStart = performance.now();
+      await scanner.buildDuplicateReport();
+      const secondMs = performance.now() - secondStart;
 
-        const output = stderrStub.args.map(([chunk]) => chunk.toString()).join("");
-        expect(output).to.include("Matrix reused");
-      } finally {
-        stderrStub.restore();
-        debugLib.disable();
-      }
+      const deltaMs = firstMs - secondMs;
+      const percent = (deltaMs / firstMs) * 100;
+      console.log(`[DryScan test] second execution faster by ${deltaMs.toFixed(2)}ms (${percent.toFixed(1)}%)`);
+
+      expect(secondMs).to.be.lessThan(firstMs);
     });
 
     it("skips comparisons for nested blocks in same file", async () => {

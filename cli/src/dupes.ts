@@ -1,7 +1,6 @@
 import { resolve } from 'path';
 import type { DuplicateReport } from '@goshenkata/dryscan-core';
 import { DryScan, configStore } from '@goshenkata/dryscan-core';
-import { writeDuplicateReport } from './reports.js';
 import { DuplicateReportServer, renderHtmlReport } from './uiServer.js';
 
 const UI_PORT = 3000;
@@ -23,7 +22,7 @@ function formatCodeSnippet(code: string, maxLines: number = 15): string {
   return formatted + (truncated ? `\n  ... │ (${lines.length - maxLines} more lines)` : '');
 }
 
-function formatDuplicates(report: DuplicateReport, reportPath?: string): void {
+function formatDuplicates(report: DuplicateReport): void {
   const { duplicates, score, threshold } = report;
 
   console.log('\n' + '═'.repeat(80));
@@ -32,10 +31,6 @@ function formatDuplicates(report: DuplicateReport, reportPath?: string): void {
   console.log(`   Duplicate Lines (weighted): ${score.duplicateLines.toLocaleString()}`);
   console.log(`   Duplicate Groups: ${score.duplicateGroups}`);
   console.log('\n' + '═'.repeat(80));
-
-  if (reportPath) {
-    console.log(`\n🗂  Report saved to ${reportPath}`);
-  }
 
   if (duplicates.length === 0) {
     console.log(`\n✓ No duplicates found (threshold: ${(threshold * 100).toFixed(0)}%)\n`);
@@ -90,7 +85,6 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
   try {
     const scanner = new DryScan(repoPath);
     const report = await scanner.buildDuplicateReport();
-    const reportPath = await writeDuplicateReport(repoPath, report);
 
     if (options.ui) {
       const server = new DuplicateReportServer({
@@ -116,18 +110,9 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
     }
 
     if (options.json) {
-      originalLog(
-        JSON.stringify(
-          {
-            ...report,
-            reportPath,
-          },
-          null,
-          2
-        )
-      );
+      originalLog(JSON.stringify(report, null, 2));
     } else {
-      formatDuplicates(report, reportPath);
+      formatDuplicates(report);
     }
   } finally {
     // Restore original console.log
