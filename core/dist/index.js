@@ -1,6 +1,7 @@
 import {
-  __decorateClass
-} from "./chunk-EUXUH3YW.js";
+  __decorateClass,
+  similarityApi
+} from "./chunk-MBLD5OWH.js";
 
 // src/DryScan.ts
 import upath6 from "upath";
@@ -1365,46 +1366,217 @@ var PairingService = class {
 import { existsSync } from "fs";
 
 // src/services/DuplicateService.ts
-import debug6 from "debug";
+import debug7 from "debug";
 import shortUuid from "short-uuid";
-import { cosineSimilarity } from "@langchain/core/utils/math";
-var log6 = debug6("DryScan:DuplicateService");
+
+// src/services/DuplicationCache.ts
+import debug6 from "debug";
+var log6 = debug6("DryScan:DuplicationCache");
+var DuplicationCache = class _DuplicationCache {
+  static instance = null;
+  comparisons = /* @__PURE__ */ new Map();
+  fileIndex = /* @__PURE__ */ new Map();
+  initialized = false;
+  /** Per-run similarity matrix from a single batched library call (reset each run). */
+  embSimMatrix = [];
+  /** Maps unit ID to its row/column index in embSimMatrix. */
+  embSimIndex = /* @__PURE__ */ new Map();
+  /** Per-run memoization of parent unit similarity scores (reset each run). */
+  parentSimCache = /* @__PURE__ */ new Map();
+  static getInstance() {
+    if (!_DuplicationCache.instance) {
+      _DuplicationCache.instance = new _DuplicationCache();
+    }
+    return _DuplicationCache.instance;
+  }
+  /**
+   * Updates the cache with fresh duplicate groups. Not awaited by callers to avoid blocking.
+   */
+  async update(groups) {
+    if (!groups) return;
+    for (const group of groups) {
+      const key = this.makeKey(group.left.id, group.right.id);
+      this.comparisons.set(key, group.similarity);
+      this.addKeyForFile(group.left.filePath, key);
+      this.addKeyForFile(group.right.filePath, key);
+    }
+    this.initialized = this.initialized || groups.length > 0;
+  }
+  /**
+   * Retrieves a cached similarity if present and valid for both file paths.
+   * Returns null when the cache has not been initialized or when the pair is missing.
+   */
+  get(leftId, rightId, leftFilePath, rightFilePath) {
+    if (!this.initialized) return null;
+    const key = this.makeKey(leftId, rightId);
+    if (!this.fileHasKey(leftFilePath, key) || !this.fileHasKey(rightFilePath, key)) {
+      return null;
+    }
+    const value = this.comparisons.get(key);
+    return typeof value === "number" ? value : null;
+  }
+  /**
+   * Invalidates all cached comparisons involving the provided file paths.
+   */
+  async invalidate(paths) {
+    if (!this.initialized || !paths || paths.length === 0) return;
+    const unique = new Set(paths);
+    for (const filePath of unique) {
+      const keys = this.fileIndex.get(filePath);
+      if (!keys) continue;
+      for (const key of keys) {
+        this.comparisons.delete(key);
+        for (const [otherPath, otherKeys] of this.fileIndex.entries()) {
+          if (otherKeys.delete(key) && otherKeys.size === 0) {
+            this.fileIndex.delete(otherPath);
+          }
+        }
+      }
+      this.fileIndex.delete(filePath);
+    }
+    if (this.comparisons.size === 0) {
+      this.initialized = false;
+    }
+  }
+  /**
+   * Clears all cached data. Intended for test setup.
+   */
+  clear() {
+    this.comparisons.clear();
+    this.fileIndex.clear();
+    this.initialized = false;
+    this.embSimMatrix = [];
+    this.embSimIndex.clear();
+    this.clearRunCaches();
+  }
+  /**
+   * Resets per-run memoization (parent similarities).
+   * The embedding matrix is intentionally preserved so incremental runs can
+   * reuse clean×clean values across calls.
+   */
+  clearRunCaches() {
+    this.parentSimCache.clear();
+  }
+  /**
+   * Builds or incrementally updates the embedding similarity matrix.
+   *
+   * Full rebuild (default): replaces the entire matrix — O(n²).
+   * Incremental (dirtyPaths provided + prior matrix exists): copies clean×clean
+   * cells from the old matrix and recomputes only dirty rows via one batched
+   * cosineSimilarity call — O(d·n) where d = number of dirty units.
+   */
+  async buildEmbSimCache(units, dirtyPaths) {
+    const embedded = units.filter((u) => Array.isArray(u.embedding) && u.embedding.length > 0);
+    if (embedded.length < 2) {
+      this.embSimMatrix = [];
+      this.embSimIndex.clear();
+      return;
+    }
+    const embeddings = embedded.map((u) => u.embedding);
+    const newIndex = new Map(embedded.map((u, i) => [u.id, i]));
+    const dirtySet = dirtyPaths ? new Set(dirtyPaths) : null;
+    const hasPriorMatrix = this.embSimMatrix.length > 0;
+    if (!dirtySet || !hasPriorMatrix) {
+      this.embSimIndex = newIndex;
+      this.embSimMatrix = await similarityApi.parallelCosineSimilarity(embeddings, embeddings);
+      log6("Built full embedding similarity matrix: %d units", embedded.length);
+      return;
+    }
+    const dirtyIds = new Set(embedded.filter((u) => dirtySet.has(u.filePath)).map((u) => u.id));
+    if (dirtyIds.size === 0) {
+      log6("Matrix reused: no dirty units detected");
+      return;
+    }
+    const n = embedded.length;
+    const newMatrix = Array.from({ length: n }, () => new Array(n).fill(0));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (dirtyIds.has(embedded[i].id) || dirtyIds.has(embedded[j].id)) continue;
+        const oi = this.embSimIndex.get(embedded[i].id);
+        const oj = this.embSimIndex.get(embedded[j].id);
+        if (oi !== void 0 && oj !== void 0) newMatrix[i][j] = this.embSimMatrix[oi][oj];
+      }
+    }
+    const dirtyIndices = embedded.reduce((acc, u, i) => dirtyIds.has(u.id) ? [...acc, i] : acc, []);
+    const dirtyRows = await similarityApi.parallelCosineSimilarity(dirtyIndices.map((i) => embeddings[i]), embeddings);
+    dirtyIndices.forEach((rowIdx, di) => {
+      for (let j = 0; j < n; j++) {
+        newMatrix[rowIdx][j] = dirtyRows[di][j];
+        newMatrix[j][rowIdx] = dirtyRows[di][j];
+      }
+    });
+    this.embSimIndex = newIndex;
+    this.embSimMatrix = newMatrix;
+    log6("Incremental matrix update: %d dirty unit(s) out of %d total", dirtyIds.size, n);
+  }
+  /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
+  getEmbSim(id1, id2) {
+    const i = this.embSimIndex.get(id1);
+    const j = this.embSimIndex.get(id2);
+    if (i === void 0 || j === void 0) return void 0;
+    return this.embSimMatrix[i][j];
+  }
+  /** Returns the memoized parent similarity for the given stable key, if available. */
+  getParentSim(key) {
+    return this.parentSimCache.get(key);
+  }
+  /** Stores a memoized parent similarity for the given stable key. */
+  setParentSim(key, sim) {
+    this.parentSimCache.set(key, sim);
+  }
+  addKeyForFile(filePath, key) {
+    const current = this.fileIndex.get(filePath) ?? /* @__PURE__ */ new Set();
+    current.add(key);
+    this.fileIndex.set(filePath, current);
+  }
+  fileHasKey(filePath, key) {
+    const keys = this.fileIndex.get(filePath);
+    return keys ? keys.has(key) : false;
+  }
+  makeKey(leftId, rightId) {
+    return [leftId, rightId].sort().join("::");
+  }
+};
+
+// src/services/DuplicateService.ts
+var log7 = debug7("DryScan:DuplicateService");
 var DuplicateService = class {
   constructor(deps) {
     this.deps = deps;
   }
   config;
-  similarityCache = /* @__PURE__ */ new Map();
-  parentSimCache = /* @__PURE__ */ new Map();
+  cache = DuplicationCache.getInstance();
+  simMemo = /* @__PURE__ */ new Map();
   async findDuplicates(config, dirtyPaths = [], previousReport) {
     this.config = config;
-    this.similarityCache = /* @__PURE__ */ new Map();
-    this.parentSimCache = /* @__PURE__ */ new Map();
+    this.simMemo = /* @__PURE__ */ new Map();
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
-    log6("Starting duplicate analysis on %d units", allUnits.length);
+    log7("Starting duplicate analysis on %d units", allUnits.length);
     if (allUnits.length < 2) {
       return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
+    if (dirtyPaths.length > 0) {
+      await this.cache.invalidate(dirtyPaths);
+    }
+    this.cache.clearRunCaches();
+    await this.cache.buildEmbSimCache(allUnits, dirtyPaths);
     const thresholds = this.resolveThresholds(config.threshold);
     const dirtySet = new Set(dirtyPaths);
     const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
     const reusableClean = canReuseFromReport ? this.reuseCleanPairsFromPreviousReport(previousReport, allUnits, dirtySet) : [];
-    const recomputed = this.computeDuplicates(
-      allUnits,
-      thresholds,
-      canReuseFromReport ? dirtySet : null
-    );
+    const recomputed = this.computeDuplicates(allUnits, thresholds, canReuseFromReport ? dirtySet : null);
     const merged = this.mergeDuplicates(reusableClean, recomputed);
     const filtered = merged.filter((g) => !this.isGroupExcluded(g));
-    log6(
+    log7(
       "Found %d duplicate groups (%d excluded, %d reused)",
       filtered.length,
       merged.length - filtered.length,
       reusableClean.length
     );
+    this.cache.update(filtered).catch((err) => log7("Cache update failed: %O", err));
     const score = this.computeDuplicationScore(filtered, allUnits);
-    log6("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+    log7("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
     return { duplicates: filtered, score };
   }
   resolveThresholds(functionThreshold) {
@@ -1419,14 +1591,14 @@ var DuplicateService = class {
   }
   computeDuplicates(units, thresholds, dirtySet) {
     if (dirtySet && dirtySet.size === 0) {
-      log6("Skipping recomputation: no dirty files and previous report threshold matches");
+      log7("Skipping recomputation: no dirty files and previous report threshold matches");
       return [];
     }
     const duplicates = [];
     const t0 = performance.now();
     for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
-      log6("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
+      log7("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
           const left = typedUnits[i];
@@ -1435,8 +1607,8 @@ var DuplicateService = class {
           if (dirtySet && !dirtySet.has(left.filePath) && !dirtySet.has(right.filePath)) {
             continue;
           }
-          const hasEmbeddings = left.embedding?.length && right.embedding?.length;
-          const similarity = hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0;
+          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
+          const similarity = cached ?? this.computeWeightedSimilarity(left, right, threshold);
           if (similarity < threshold) continue;
           const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
           if (!exclusionString) continue;
@@ -1451,7 +1623,7 @@ var DuplicateService = class {
         }
       }
     }
-    log6("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
+    log7("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
   reuseCleanPairsFromPreviousReport(report, units, dirtySet) {
@@ -1462,7 +1634,7 @@ var DuplicateService = class {
       if (leftDirty || rightDirty) return false;
       return unitIds.has(group.left.id) && unitIds.has(group.right.id);
     });
-    log6("Reused %d clean-clean duplicate groups from previous report", reusable.length);
+    log7("Reused %d clean-clean duplicate groups from previous report", reusable.length);
     return reusable;
   }
   mergeDuplicates(reused, recomputed) {
@@ -1542,23 +1714,19 @@ var DuplicateService = class {
     const rp = this.findParent(right, type);
     if (!lp || !rp) return 0;
     const key = lp.id < rp.id ? `${lp.id}::${rp.id}` : `${rp.id}::${lp.id}`;
-    const cached = this.parentSimCache.get(key);
+    const cached = this.cache.getParentSim(key);
     if (cached !== void 0) return cached;
     const sim = this.similarity(lp, rp);
-    this.parentSimCache.set(key, sim);
+    this.cache.setParentSim(key, sim);
     return sim;
   }
   similarity(left, right) {
     const key = left.id < right.id ? `${left.id}::${right.id}` : `${right.id}::${left.id}`;
-    const cached = this.similarityCache.get(key);
-    if (cached !== void 0) return cached;
-    let value = 0;
-    if (left.embedding?.length && right.embedding?.length) {
-      value = cosineSimilarity([left.embedding], [right.embedding])[0][0] ?? 0;
-    } else {
-      value = this.childSimilarity(left, right);
-    }
-    this.similarityCache.set(key, value);
+    const memo = this.simMemo.get(key);
+    if (memo !== void 0) return memo;
+    const embSim = this.cache.getEmbSim(left.id, right.id);
+    const value = embSim ?? this.childSimilarity(left, right);
+    this.simMemo.set(key, value);
     return value;
   }
   childSimilarity(left, right) {

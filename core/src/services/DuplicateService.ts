@@ -1,17 +1,17 @@
 import debug from "debug";
 import shortUuid from "short-uuid";
-import { cosineSimilarity } from "@langchain/core/utils/math";
 import { DryScanServiceDeps } from "./types";
 import { DuplicateAnalysisResult, DuplicateGroup, DuplicateReport, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { DryConfig } from "../types";
+import { DuplicationCache } from "./DuplicationCache";
 
 const log = debug("DryScan:DuplicateService");
 
 export class DuplicateService {
   private config?: DryConfig;
-  private similarityCache = new Map<string, number>();
-  private parentSimCache = new Map<string, number>();
+  private readonly cache = DuplicationCache.getInstance();
+  private simMemo = new Map<string, number>();
 
   constructor(private readonly deps: DryScanServiceDeps) {}
 
@@ -21,8 +21,7 @@ export class DuplicateService {
     previousReport?: DuplicateReport | null
   ): Promise<DuplicateAnalysisResult> {
     this.config = config;
-    this.similarityCache = new Map<string, number>();
-    this.parentSimCache = new Map<string, number>();
+    this.simMemo = new Map<string, number>();
 
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
@@ -32,19 +31,22 @@ export class DuplicateService {
       return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
 
+    if (dirtyPaths.length > 0) {
+      await this.cache.invalidate(dirtyPaths);
+    }
+
+    this.cache.clearRunCaches();
+    await this.cache.buildEmbSimCache(allUnits, dirtyPaths);
+
     const thresholds = this.resolveThresholds(config.threshold);
-  const dirtySet = new Set(dirtyPaths);
-  const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
+    const dirtySet = new Set(dirtyPaths);
+    const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
 
     const reusableClean = canReuseFromReport
       ? this.reuseCleanPairsFromPreviousReport(previousReport as DuplicateReport, allUnits, dirtySet)
       : [];
 
-    const recomputed = this.computeDuplicates(
-      allUnits,
-      thresholds,
-      canReuseFromReport ? dirtySet : null
-    );
+    const recomputed = this.computeDuplicates(allUnits, thresholds, canReuseFromReport ? dirtySet : null);
 
     const merged = this.mergeDuplicates(reusableClean, recomputed);
     const filtered = merged.filter((g) => !this.isGroupExcluded(g));
@@ -55,6 +57,8 @@ export class DuplicateService {
       merged.length - filtered.length,
       reusableClean.length
     );
+
+    this.cache.update(filtered).catch((err) => log("Cache update failed: %O", err));
 
     const score = this.computeDuplicationScore(filtered, allUnits);
     log("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
@@ -99,8 +103,8 @@ export class DuplicateService {
             continue;
           }
 
-          const hasEmbeddings = left.embedding?.length && right.embedding?.length;
-          const similarity = hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0;
+          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
+          const similarity = cached ?? this.computeWeightedSimilarity(left, right, threshold);
           if (similarity < threshold) continue;
 
           const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
@@ -235,27 +239,23 @@ export class DuplicateService {
     if (!lp || !rp) return 0;
 
     const key = lp.id < rp.id ? `${lp.id}::${rp.id}` : `${rp.id}::${lp.id}`;
-    const cached = this.parentSimCache.get(key);
+    const cached = this.cache.getParentSim(key);
     if (cached !== undefined) return cached;
 
     const sim = this.similarity(lp, rp);
-    this.parentSimCache.set(key, sim);
+    this.cache.setParentSim(key, sim);
     return sim;
   }
 
   private similarity(left: IndexUnit, right: IndexUnit): number {
     const key = left.id < right.id ? `${left.id}::${right.id}` : `${right.id}::${left.id}`;
-    const cached = this.similarityCache.get(key);
-    if (cached !== undefined) return cached;
+    const memo = this.simMemo.get(key);
+    if (memo !== undefined) return memo;
 
-    let value = 0;
-    if (left.embedding?.length && right.embedding?.length) {
-      value = cosineSimilarity([left.embedding], [right.embedding])[0][0] ?? 0;
-    } else {
-      value = this.childSimilarity(left, right);
-    }
+    const embSim = this.cache.getEmbSim(left.id, right.id);
+    const value = embSim ?? this.childSimilarity(left, right);
 
-    this.similarityCache.set(key, value);
+    this.simMemo.set(key, value);
     return value;
   }
 

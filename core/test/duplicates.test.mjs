@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import sinon from "sinon";
 import { DryScan } from "../src/DryScan.ts";
 import { IndexUnitType } from "../src/types.ts";
 import { configStore } from "../src/config/configStore.ts";
@@ -6,6 +7,8 @@ import { buildTestConfig } from "./helpers/testConfig.mjs";
 import upath from "upath";
 import fs from "fs/promises";
 import os from "os";
+import { DuplicationCache } from "../src/services/DuplicationCache.ts";
+import { similarityApi } from "../src/services/ParallelSimilarity.ts";
 
 describe("DryScan - Duplicate Detection", function() {
   this.timeout(10000);
@@ -33,6 +36,9 @@ describe("DryScan - Duplicate Detection", function() {
   }
 
   beforeEach(async () => {
+    DuplicationCache.getInstance().clear();
+    sinon.restore();
+
     // Create a temporary directory for each test
     testDir = await fs.mkdtemp(upath.join(os.tmpdir(), "dryscan-test-"));
     await writeConfig(testDir, {});
@@ -43,6 +49,8 @@ describe("DryScan - Duplicate Detection", function() {
   afterEach(async () => {
     // Clean up
     await fs.rm(testDir, { recursive: true, force: true });
+    sinon.restore();
+    DuplicationCache.getInstance().clear();
   });
 
   describe("buildDuplicateReport", () => {
@@ -111,6 +119,35 @@ describe("DryScan - Duplicate Detection", function() {
       expect(dup).to.have.property("right");
       expect(dup.shortId).to.be.a("string").that.is.not.empty;
       expect(dup.exclusionString).to.be.a("string");
+    });
+
+    it("uses the embedding similarity matrix cache (parallelCosineSimilarity)", async () => {
+      // Make embeddings that would NOT be duplicates on their own.
+      const units = [
+        makeUnit("1", "a", [1, 0]),
+        makeUnit("2", "b", [0, 1]),
+        makeUnit("3", "c", [1, 1]),
+      ];
+
+      const matrix = [
+        [1, 0.95, 0],
+        [0.95, 1, 0],
+        [0, 0, 1],
+      ];
+
+      const stub = sinon.stub(similarityApi, "parallelCosineSimilarity").resolves(matrix);
+
+      const scanner = await stubbedScanner(units, { threshold: 0.9 });
+      const report = await scanner.buildDuplicateReport();
+
+      expect(stub.calledOnce).to.equal(true);
+
+      const key = (g) => [g.left.id, g.right.id].sort().join("::");
+      const ids = report.duplicates.map(key);
+      expect(ids).to.include("1::2");
+
+      const group = report.duplicates.find((g) => key(g) === "1::2");
+      expect(group.similarity).to.be.closeTo(0.95, 1e-12);
     });
 
     it("sorts duplicates by similarity descending", async () => {

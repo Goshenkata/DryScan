@@ -1,5 +1,7 @@
 import os from "node:os";
 import { Worker } from "node:worker_threads";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { cosineSimilarity } from "@langchain/core/utils/math";
 
 /** Minimum row count below which synchronous is faster than worker overhead. */
@@ -22,8 +24,21 @@ export async function parallelCosineSimilarity(A: number[][], B: number[][]): Pr
   B.forEach((row, i) => bView.set(row, i * dims));
 
   const runningTsSource = new URL(import.meta.url).pathname.endsWith('.ts');
-  const workerFile = runningTsSource ? './cosineSimilarityWorker.ts' : './cosineSimilarityWorker.js';
-  const workerUrl = new URL(workerFile, import.meta.url);
+
+  const workerCandidates = runningTsSource
+    ? ['./cosineSimilarityWorker.ts', './services/cosineSimilarityWorker.ts']
+    : ['./cosineSimilarityWorker.js', './services/cosineSimilarityWorker.js'];
+
+  const workerUrl = workerCandidates
+    .map((candidate) => new URL(candidate, import.meta.url))
+    .find((url) => existsSync(fileURLToPath(url)));
+
+  if (!workerUrl) {
+    throw new Error(
+      `cosineSimilarityWorker not found next to ${fileURLToPath(new URL(import.meta.url))}. Tried: ${workerCandidates.join(", ")}`
+    );
+  }
+
   const execArgv = runningTsSource ? ['--import', 'tsx/esm'] : [];
 
   const chunks = Array.from(
@@ -57,3 +72,8 @@ function runWorker(
     worker.once("error", reject);
   });
 }
+
+// Mutable export for test stubbing and for callers that want an indirection layer.
+export const similarityApi = {
+  parallelCosineSimilarity,
+};

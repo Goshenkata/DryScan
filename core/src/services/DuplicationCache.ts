@@ -1,6 +1,6 @@
 import debug from "debug";
 import { DuplicateGroup, IndexUnit } from "../types";
-import { parallelCosineSimilarity } from "./ParallelSimilarity";
+import { similarityApi } from "./ParallelSimilarity";
 
 const log = debug("DryScan:DuplicationCache");
 
@@ -134,7 +134,7 @@ export class DuplicationCache {
     if (!dirtySet || !hasPriorMatrix) {
       // Full rebuild
       this.embSimIndex = newIndex;
-      this.embSimMatrix = await parallelCosineSimilarity(embeddings, embeddings);
+      this.embSimMatrix = await similarityApi.parallelCosineSimilarity(embeddings, embeddings);
       log("Built full embedding similarity matrix: %d units", embedded.length);
       return;
     }
@@ -162,7 +162,7 @@ export class DuplicationCache {
 
     // Recompute dirty rows in one batched call
     const dirtyIndices = embedded.reduce<number[]>((acc, u, i) => (dirtyIds.has(u.id) ? [...acc, i] : acc), []);
-    const dirtyRows = await parallelCosineSimilarity(dirtyIndices.map(i => embeddings[i]), embeddings);
+    const dirtyRows = await similarityApi.parallelCosineSimilarity(dirtyIndices.map(i => embeddings[i]), embeddings);
     dirtyIndices.forEach((rowIdx, di) => {
       for (let j = 0; j < n; j++) {
         newMatrix[rowIdx][j] = dirtyRows[di][j];

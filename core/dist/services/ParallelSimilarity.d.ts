@@ -4,5 +4,8 @@
  * B is packed into a SharedArrayBuffer shared across all workers — no copies.
  */
 declare function parallelCosineSimilarity(A: number[][], B: number[][]): Promise<number[][]>;
+declare const similarityApi: {
+    parallelCosineSimilarity: typeof parallelCosineSimilarity;
+};
 
-export { parallelCosineSimilarity };
+export { parallelCosineSimilarity, similarityApi };
