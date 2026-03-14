@@ -534,3 +534,68 @@ EOF
   percent=$(( (delta_ms * 100) / first_time_ms ))
   echo "Second execution faster by ${delta_ms}ms (~${percent}%)"
 }
+
+@test "parallel cosine uses GPU backend and reports worker-vs-gpu timing" {
+  npm --prefix "${REPO_ROOT}/core" run build >/dev/null
+  [ "$?" -eq 0 ]
+
+  bench_script="${BATS_TMPDIR}/parallel-sim-bench-${BATS_TEST_NUMBER}.mjs"
+  cat > "${bench_script}" <<'EOF'
+import { performance } from 'node:perf_hooks';
+import { pathToFileURL } from 'node:url';
+
+const repoRoot = process.env.DRYSCAN_REPO_ROOT;
+if (!repoRoot) {
+  throw new Error('Missing DRYSCAN_REPO_ROOT');
+}
+
+const moduleUrl = pathToFileURL(`${repoRoot}/core/dist/services/ParallelSimilarity.js`).href;
+const { parallelCosineSimilarity } = await import(moduleUrl);
+
+const rows = Number(process.env.DRYSCAN_BENCH_ROWS || '320');
+const cols = Number(process.env.DRYSCAN_BENCH_COLS || '256');
+
+const makeMatrix = (r, c, seed) => Array.from({ length: r }, (_, i) =>
+  Array.from({ length: c }, (_, j) => {
+    const x = Math.sin((i + 1) * (j + 1) * seed) + Math.cos((i + seed) * 0.37);
+    return x;
+  })
+);
+
+const A = makeMatrix(rows, cols, 0.17);
+const B = makeMatrix(rows, cols, 0.23);
+
+// Warmup to reduce startup noise for the measured run.
+await parallelCosineSimilarity(A, B);
+
+const t0 = performance.now();
+const matrix = await parallelCosineSimilarity(A, B);
+const elapsedMs = performance.now() - t0;
+
+if (!Array.isArray(matrix) || matrix.length !== rows) {
+  throw new Error(`Unexpected result shape: ${Array.isArray(matrix) ? matrix.length : 'not-array'}`);
+}
+
+process.stdout.write(JSON.stringify({ elapsedMs: Number(elapsedMs.toFixed(2)), rows, cols }));
+EOF
+
+  worker_out="${BATS_TMPDIR}/worker-bench-${BATS_TEST_NUMBER}.json"
+  worker_err="${BATS_TMPDIR}/worker-bench-${BATS_TEST_NUMBER}.err"
+  DEBUG="DryScan:ParallelSimilarity" DRYSCAN_REPO_ROOT="${REPO_ROOT}" DRYSCAN_SIM_BACKEND="worker" node "${bench_script}" >"${worker_out}" 2>"${worker_err}"
+  [ "$?" -eq 0 ]
+  [[ "$(cat "${worker_err}")" == *"SIM_BACKEND=worker"* ]]
+
+  gpu_out="${BATS_TMPDIR}/gpu-bench-${BATS_TEST_NUMBER}.json"
+  gpu_err="${BATS_TMPDIR}/gpu-bench-${BATS_TEST_NUMBER}.err"
+  DEBUG="DryScan:ParallelSimilarity" DRYSCAN_REPO_ROOT="${REPO_ROOT}" DRYSCAN_SIM_BACKEND="gpu" node "${bench_script}" >"${gpu_out}" 2>"${gpu_err}"
+  [ "$?" -eq 0 ]
+  # Strict assertion: GPU path must be active, not fallback.
+  [[ "$(cat "${gpu_err}")" == *"SIM_BACKEND=gpu"* ]]
+
+  worker_ms=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(d.elapsedMs));' "${worker_out}")
+  gpu_ms=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(d.elapsedMs));' "${gpu_out}")
+
+  delta_ms=$(node -e 'const w=Number(process.argv[1]); const g=Number(process.argv[2]); process.stdout.write(String(Math.round((w-g)*100)/100));' "${worker_ms}" "${gpu_ms}")
+  speedup_pct=$(node -e 'const w=Number(process.argv[1]); const g=Number(process.argv[2]); const p=((w-g)/w)*100; process.stdout.write(String(Math.round(p*100)/100));' "${worker_ms}" "${gpu_ms}")
+  echo "GPU benchmark: worker=${worker_ms}ms gpu=${gpu_ms}ms delta=${delta_ms}ms speedup=${speedup_pct}%"
+}
