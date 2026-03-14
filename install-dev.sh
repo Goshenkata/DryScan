@@ -10,7 +10,7 @@ tgz=$(npm pack 2>/dev/null | tail -n1)
 cd ..
 
 echo "🌍 Installing globally..."
-npm install -g "./cli/$tgz"
+CXXFLAGS="-include cstdint" npm install -g "./cli/$tgz"
 
 echo "✅ Verifying installation..."
 if dryscan --help &>/dev/null; then
