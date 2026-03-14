@@ -237,10 +237,11 @@
     </div>
   </div>
 
-  <script id="dup-data" type="application/json">{{{duplicatesJson}}}</script>
+  <script id="dup-data" data-total="{{duplicatesTotal}}" type="application/json">{{{duplicatesJson}}}</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
   <div id="loading-indicator" style="display: none; text-align: center; padding: 20px; color: var(--muted);">Loading more...</div>
+  <div id="scroll-sentinel" style="height: 1px;"></div>
   <script type="module">
     const dataEl = document.getElementById('dup-data');
     const modal = document.getElementById('modal');
@@ -250,12 +251,16 @@
     const themeLabel = document.getElementById('theme-label');
     const themeLink = document.getElementById('hljs-theme');
     const loadingIndicator = document.getElementById('loading-indicator');
+    const scrollSentinel = document.getElementById('scroll-sentinel');
     
     // Pagination state
-    let allGroups = JSON.parse(dataEl.textContent || '[]');
+    const initialGroups = JSON.parse(dataEl.textContent || '[]');
+    const totalCount = Number(dataEl.dataset.total || initialGroups.length);
     let displayedGroups = [];
     let offset = 0;
-    const pageSize = 100;
+    const pageSizeFromQuery = Number(new URLSearchParams(window.location.search).get('pageSize'));
+    const pageSize = Number.isFinite(pageSizeFromQuery) && pageSizeFromQuery > 0 ? pageSizeFromQuery : 100;
+    let initialBatchUsed = false;
     let isLoading = false;
     const toast = (msg) => alert(msg);
 
@@ -311,7 +316,7 @@
     };
 
     const loadMore = async () => {
-      if (isLoading || offset >= allGroups.length) {
+      if (isLoading || offset >= totalCount) {
         return;
       }
       
@@ -321,20 +326,25 @@
       try {
         // Simulate fetch for first load from embedded data, then fetch from API for subsequent loads
         let newGroups;
-        if (offset === 0 && allGroups.length > 0) {
+        if (!initialBatchUsed && offset === 0 && initialGroups.length > 0) {
           // First load: use embedded data
-          newGroups = allGroups.slice(offset, offset + pageSize);
+          newGroups = initialGroups;
+          initialBatchUsed = true;
         } else {
           // Subsequent loads: fetch from API
           const res = await fetch(`/api/duplicates?offset=${offset}&limit=${pageSize}`);
           if (!res.ok) throw new Error('Failed to load more duplicates');
           const data = await res.json();
           newGroups = data.data;
-          allGroups = data.data.length < pageSize ? displayedGroups.concat(data.data) : null;
+        }
+
+        if (newGroups.length === 0) {
+          offset = totalCount;
+          return;
         }
         
         displayedGroups = displayedGroups.concat(newGroups);
-        offset += pageSize;
+        offset += newGroups.length;
         
         const startIdx = displayedGroups.length - newGroups.length;
         newGroups.forEach((group, idx) => {
@@ -361,12 +371,12 @@
 
     // Set up Intersection Observer for infinite scroll
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && offset < (allGroups.length || displayedGroups.length)) {
+      if (entries[0].isIntersecting && offset < totalCount) {
         loadMore();
       }
     }, { rootMargin: '100px' });
 
-    observer.observe(loadingIndicator);
+    observer.observe(scrollSentinel);
 
       const regenerateReport = async () => {
         const res = await fetch('/api/regenerate', { method: 'POST' });

@@ -146,6 +146,7 @@ export class DuplicateReportServer {
         const html = template({
         thresholdPct: Math.round(this.state.threshold * 100),
         duplicatesJson: JSON.stringify(initialDuplicates),
+        duplicatesTotal: this.state.duplicates.length,
         score: buildScoreView(this.state.score),
         enableExclusions: true,
         });
@@ -258,6 +259,7 @@ export async function renderHtmlReport(options: HtmlRenderOptions): Promise<stri
   return template({
     thresholdPct: Math.round(options.threshold * 100),
     duplicatesJson: JSON.stringify(initialDuplicates),
+    duplicatesTotal: options.duplicates.length,
     score: buildScoreView(options.score),
     enableExclusions: options.enableExclusions,
   });
