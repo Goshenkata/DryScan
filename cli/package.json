@@ -1,6 +1,6 @@
 {
   "name": "@goshenkata/dryscan-cli",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "CLI tool for DryScan - semantic code duplication analyzer",
   "type": "module",
   "main": "./dist/cli.js",
@@ -30,7 +30,7 @@
     "url": "https://github.com/Goshenkata/DryScan.git"
   },
   "dependencies": {
-    "@goshenkata/dryscan-core": "^1.4.8",
+    "@goshenkata/dryscan-core": "^1.4.9",
     "commander": "^14.0.2",
     "handlebars": "^4.7.8"
   },
