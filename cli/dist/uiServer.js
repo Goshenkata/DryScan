@@ -5,7 +5,6 @@ import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import Handlebars from "handlebars";
 import { DryScan, configStore } from "@goshenkata/dryscan-core";
-import { applyExclusionFromLatestReport, writeDuplicateReport } from "./reports.js";
 const defaultPort = 3000;
 const gradeMeta = {
     Excellent: { emoji: "🌟", className: "excellent" },
@@ -57,7 +56,7 @@ export class DuplicateReportServer {
                             res.end(JSON.stringify({ error: "Missing or invalid id" }));
                             return;
                         }
-                        const result = await applyExclusionFromLatestReport(this.repoRoot, id);
+                        const result = await this.applyExclusionFromCurrentState(id);
                         await this.regenerateReport();
                         res.setHeader("content-type", "application/json");
                         res.end(JSON.stringify({
@@ -139,7 +138,6 @@ export class DuplicateReportServer {
             await this.configReady;
             const scanner = new DryScan(this.repoRoot);
             const report = await scanner.buildDuplicateReport();
-            await writeDuplicateReport(this.repoRoot, report);
             this.state = {
                 duplicates: report.duplicates,
                 score: report.score,
@@ -153,6 +151,26 @@ export class DuplicateReportServer {
         finally {
             this.regenerating = undefined;
         }
+    }
+    async applyExclusionFromCurrentState(shortId) {
+        await this.configReady;
+        const group = this.state.duplicates.find((d) => d.shortId === shortId);
+        if (!group) {
+            throw new Error(`No duplicate group found for id ${shortId}.`);
+        }
+        if (!group.exclusionString) {
+            throw new Error("Duplicate group cannot be excluded because it lacks a pair key.");
+        }
+        const config = await configStore.get(this.repoRoot);
+        const alreadyPresent = config.excludedPairs.includes(group.exclusionString);
+        if (alreadyPresent) {
+            return { exclusion: group.exclusionString, added: false };
+        }
+        await configStore.save(this.repoRoot, {
+            ...config,
+            excludedPairs: [...config.excludedPairs, group.exclusionString],
+        });
+        return { exclusion: group.exclusionString, added: true };
     }
 }
 async function loadTemplate() {

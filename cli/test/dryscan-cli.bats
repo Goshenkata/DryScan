@@ -494,3 +494,43 @@ EOF
   worker_units=$(sqlite_query "SELECT COUNT(*) FROM index_units WHERE name LIKE 'Worker.%';")
   [ "${worker_units}" -gt 0 ]
 }
+
+@test "second dupes execution is faster with report reuse" {
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  # First execution: baseline (no prior report)
+  first_out="${BATS_TMPDIR}/dupes-first-${BATS_TEST_NUMBER}.out"
+  first_err="${BATS_TMPDIR}/dupes-first-${BATS_TEST_NUMBER}.err"
+  first_start=$(date +%s%N)
+  node "${CLI_BIN}" --debug dupes --json "${TEST_ROOT}" >"${first_out}" 2>"${first_err}"
+  first_end=$(date +%s%N)
+  first_time_ms=$(( (first_end - first_start) / 1000000 ))
+
+  # Verify first execution succeeded
+  [ -s "${first_out}" ]
+  [[ "$(cat "${first_out}")" == *"\"duplicates\""* ]]
+
+  # Second execution: should be faster (no file changes, reuse clean-clean from report)
+  second_out="${BATS_TMPDIR}/dupes-second-${BATS_TEST_NUMBER}.out"
+  second_err="${BATS_TMPDIR}/dupes-second-${BATS_TEST_NUMBER}.err"
+  second_start=$(date +%s%N)
+  node "${CLI_BIN}" --debug dupes --json "${TEST_ROOT}" >"${second_out}" 2>"${second_err}"
+  second_end=$(date +%s%N)
+  second_time_ms=$(( (second_end - second_start) / 1000000 ))
+
+  # Verify second execution succeeded
+  [ -s "${second_out}" ]
+  [[ "$(cat "${second_out}")" == *"\"duplicates\""* ]]
+
+  # Check for reuse message in stderr (debug logs)
+  [[ "$(cat "${second_err}")" == *"Reusing clean-clean duplicates from latest report"* ]]
+
+  # Second should be faster than first
+  [ "${second_time_ms}" -lt "${first_time_ms}" ]
+
+  # Log the speedup for visibility
+  delta_ms=$(( first_time_ms - second_time_ms ))
+  percent=$(( (delta_ms * 100) / first_time_ms ))
+  echo "Second execution faster by ${delta_ms}ms (~${percent}%)"
+}

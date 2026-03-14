@@ -244,6 +244,8 @@ declare class DryScan {
     }>;
     private ensureDatabase;
     private loadConfig;
+    private saveReport;
+    private loadLatestReport;
 }
 
 declare class ConfigStore {

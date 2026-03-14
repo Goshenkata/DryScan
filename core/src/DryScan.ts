@@ -1,18 +1,18 @@
 import upath from "upath";
 import fs from "fs/promises";
 import { DuplicateAnalysisResult, DuplicateReport } from "./types";
-import { DRYSCAN_DIR, INDEX_DB } from "./const";
+import { DRYSCAN_DIR, INDEX_DB, REPORTS_DIR } from "./const";
 import { defaultExtractors, IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { RepositoryInitializer, InitOptions as InitServiceOptions } from "./services/RepositoryInitializer";
 import { UpdateService } from "./services/UpdateService";
-import { DuplicateService } from "./services/DuplicateService";
 import { ExclusionService } from "./services/ExclusionService";
 import { DryScanServiceDeps } from "./services/types";
 import { configStore } from "./config/configStore";
 import { DryConfig } from "./types";
 import { PairingService } from "./services/PairingService";
 import { existsSync } from "fs";
+import { DuplicateService } from "./services/DuplicateService";
 
 export type InitOptions = InitServiceOptions;
 
@@ -107,7 +107,7 @@ export class DryScan {
   async buildDuplicateReport(): Promise<DuplicateReport> {
     const config = await this.loadConfig();
     const analysis = await this.findDuplicates(config);
-    return {
+    const report = {
       version: 1,
       generatedAt: new Date().toISOString(),
       threshold: config.threshold,
@@ -115,6 +115,8 @@ export class DryScan {
       score: analysis.score,
       duplicates: analysis.duplicates,
     };
+    await this.saveReport(report);
+    return report;
   }
 
   /**
@@ -134,9 +136,14 @@ export class DryScan {
     const updateDuration = Date.now() - updateStart;
     console.log(`[DryScan] Index update  took ${updateDuration}ms.`);
 
+    const previousReport = await this.loadLatestReport();
+    if (previousReport?.threshold === config.threshold) {
+      console.log("[DryScan] Reusing clean-clean duplicates from latest report (threshold unchanged).");
+    }
+
     console.log("[DryScan] Detecting duplicates...");
     const dupStart = Date.now();
-    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths);
+    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths, previousReport);
     const dupDuration = Date.now() - dupStart;
     console.log(`[DryScan] Duplicate detection took ${dupDuration}ms.`);
 
@@ -161,6 +168,45 @@ export class DryScan {
 
   private async loadConfig(): Promise<DryConfig> {
     return configStore.get(this.repoPath);
+  }
+
+  private async saveReport(report: DuplicateReport): Promise<void> {
+    const reportDir = upath.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
+    await fs.mkdir(reportDir, { recursive: true });
+    const safeTimestamp = report.generatedAt.replace(/[:.]/g, "-");
+    const reportPath = upath.join(reportDir, `dupes-${safeTimestamp}.json`);
+    await fs.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
+  }
+
+  private async loadLatestReport(): Promise<DuplicateReport | null> {
+    const reportDir = upath.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
+    let entries: string[];
+    try {
+      entries = await fs.readdir(reportDir);
+    } catch (err: any) {
+      if (err?.code === "ENOENT") return null;
+      throw err;
+    }
+
+    const jsonReports = entries.filter((name) => name.endsWith(".json"));
+    if (jsonReports.length === 0) return null;
+
+    const withStats = await Promise.all(
+      jsonReports.map(async (name) => {
+        const fullPath = upath.join(reportDir, name);
+        const stat = await fs.stat(fullPath);
+        return { fullPath, mtimeMs: stat.mtimeMs };
+      })
+    );
+
+    withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const latest = withStats[0];
+    const raw = await fs.readFile(latest.fullPath, "utf8");
+    const parsed = JSON.parse(raw) as DuplicateReport;
+    if (!parsed || !Array.isArray(parsed.duplicates) || typeof parsed.threshold !== "number") {
+      return null;
+    }
+    return parsed;
   }
 
 }
