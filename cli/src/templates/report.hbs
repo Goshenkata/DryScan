@@ -224,6 +224,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlightjs-line-numbers.js/2.8.0/highlightjs-line-numbers.min.js"></script>
+  <div id="loading-indicator" style="display: none; text-align: center; padding: 20px; color: var(--muted);">Loading more...</div>
   <script type="module">
     const dataEl = document.getElementById('dup-data');
     const modal = document.getElementById('modal');
@@ -232,7 +233,14 @@
     const themeToggle = document.getElementById('theme-toggle');
     const themeLabel = document.getElementById('theme-label');
     const themeLink = document.getElementById('hljs-theme');
-    const groups = JSON.parse(dataEl.textContent || '[]');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    
+    // Pagination state
+    let allGroups = JSON.parse(dataEl.textContent || '[]');
+    let displayedGroups = [];
+    let offset = 0;
+    const pageSize = 100;
+    let isLoading = false;
     const toast = (msg) => alert(msg);
 
     const applyTheme = (next) => {
@@ -273,12 +281,63 @@
 
     const render = () => {
       container.innerHTML = '';
-      groups.forEach((group, idx) => {
+      displayedGroups.forEach((group, idx) => {
         container.appendChild(renderGroup(group, idx));
       });
       hljs.highlightAll();
       document.querySelectorAll('code.hljs').forEach(el => hljs.lineNumbersBlock(el));
     };
+
+    const loadMore = async () => {
+      if (isLoading || offset >= allGroups.length) {
+        return;
+      }
+      
+      isLoading = true;
+      loadingIndicator.style.display = 'block';
+      
+      try {
+        // Simulate fetch for first load from embedded data, then fetch from API for subsequent loads
+        let newGroups;
+        if (offset === 0 && allGroups.length > 0) {
+          // First load: use embedded data
+          newGroups = allGroups.slice(offset, offset + pageSize);
+        } else {
+          // Subsequent loads: fetch from API
+          const res = await fetch(`/api/duplicates?offset=${offset}&limit=${pageSize}`);
+          if (!res.ok) throw new Error('Failed to load more duplicates');
+          const data = await res.json();
+          newGroups = data.data;
+          allGroups = data.data.length < pageSize ? displayedGroups.concat(data.data) : null;
+        }
+        
+        displayedGroups = displayedGroups.concat(newGroups);
+        offset += pageSize;
+        
+        const startIdx = displayedGroups.length - newGroups.length;
+        newGroups.forEach((group, idx) => {
+          container.appendChild(renderGroup(group, startIdx + idx));
+        });
+        
+        hljs.highlightAll();
+        document.querySelectorAll('code.hljs').forEach(el => hljs.lineNumbersBlock(el));
+      } catch (err) {
+        console.error('Error loading more duplicates:', err);
+        toast('Failed to load more duplicates');
+      } finally {
+        isLoading = false;
+        loadingIndicator.style.display = 'none';
+      }
+    };
+
+    // Set up Intersection Observer for infinite scroll
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && offset < (allGroups.length || displayedGroups.length)) {
+        loadMore();
+      }
+    }, { rootMargin: '100px' });
+
+    observer.observe(loadingIndicator);
 
       const regenerateReport = async () => {
         const res = await fetch('/api/regenerate', { method: 'POST' });
@@ -448,7 +507,8 @@
     });
     {{/if}}
 
-    render();
+    // Initial load
+    loadMore();
   </script>
 </body>
 </html>
