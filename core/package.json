@@ -21,7 +21,7 @@
     "coverage": "c8 tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\""
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20 <22"
   },
   "keywords": [
     "code-analysis",
