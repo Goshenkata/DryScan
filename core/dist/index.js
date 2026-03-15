@@ -1,7 +1,7 @@
 import {
   __decorateClass,
   similarityApi
-} from "./chunk-O4FC2UOS.js";
+} from "./chunk-SK4GNQXH.js";
 
 // src/DryScan.ts
 import upath6 from "upath";
@@ -1396,10 +1396,11 @@ var DuplicationCache = class _DuplicationCache {
   comparisons = /* @__PURE__ */ new Map();
   fileIndex = /* @__PURE__ */ new Map();
   initialized = false;
-  /** Per-run similarity matrix from a single batched library call (reset each run). */
-  embSimMatrix = [];
-  /** Maps unit ID to its row/column index in embSimMatrix. */
-  embSimIndex = /* @__PURE__ */ new Map();
+  /**
+   * Per-run embedding similarity matrices.
+   * Stored as flat row-major Float32Array buffers to avoid V8 heap blowups.
+   */
+  embSimByType = /* @__PURE__ */ new Map();
   /** Per-run memoization of parent unit similarity scores (reset each run). */
   parentSimCache = /* @__PURE__ */ new Map();
   static getInstance() {
@@ -1464,8 +1465,7 @@ var DuplicationCache = class _DuplicationCache {
     this.comparisons.clear();
     this.fileIndex.clear();
     this.initialized = false;
-    this.embSimMatrix = [];
-    this.embSimIndex.clear();
+    this.embSimByType.clear();
     this.clearRunCaches();
   }
   /**
@@ -1485,55 +1485,75 @@ var DuplicationCache = class _DuplicationCache {
    * cosineSimilarity call — O(d·n) where d = number of dirty units.
    */
   async buildEmbSimCache(units, dirtyPaths) {
-    const embedded = units.filter((u) => Array.isArray(u.embedding) && u.embedding.length > 0);
+    await this.buildEmbSimCacheForType(units, "class" /* CLASS */, dirtyPaths);
+    await this.buildEmbSimCacheForType(units, "function" /* FUNCTION */, dirtyPaths);
+    await this.buildEmbSimCacheForType(units, "block" /* BLOCK */, dirtyPaths);
+  }
+  async buildEmbSimCacheForType(units, unitType, dirtyPaths) {
+    const embedded = units.filter(
+      (u) => u.unitType === unitType && Array.isArray(u.embedding) && u.embedding.length > 0
+    );
     if (embedded.length < 2) {
-      this.embSimMatrix = [];
-      this.embSimIndex.clear();
+      this.embSimByType.delete(unitType);
       return;
     }
     const embeddings = embedded.map((u) => u.embedding);
     const newIndex = new Map(embedded.map((u, i) => [u.id, i]));
     const dirtySet = dirtyPaths ? new Set(dirtyPaths) : null;
-    const hasPriorMatrix = this.embSimMatrix.length > 0;
-    if (!dirtySet || !hasPriorMatrix) {
-      this.embSimIndex = newIndex;
-      this.embSimMatrix = await similarityApi.parallelCosineSimilarity(embeddings, embeddings);
-      log6("Built full embedding similarity matrix: %d units", embedded.length);
+    const prior = this.embSimByType.get(unitType);
+    const hasPrior = Boolean(prior);
+    const n = embedded.length;
+    const canIncremental = Boolean(dirtySet && hasPrior && prior.size === n);
+    if (!canIncremental) {
+      const { data } = await similarityApi.parallelCosineSimilarityFlat(embeddings, embeddings, "float32");
+      this.embSimByType.set(unitType, { size: n, index: newIndex, matrix: data });
+      log6("Built embedding similarity matrix for %s: %d units", unitType, embedded.length);
+      return;
+    }
+    const priorIndex = prior.index;
+    let indicesStable = true;
+    for (const [id, idx] of newIndex.entries()) {
+      if (priorIndex.get(id) !== idx) {
+        indicesStable = false;
+        break;
+      }
+    }
+    if (!indicesStable) {
+      const { data } = await similarityApi.parallelCosineSimilarityFlat(embeddings, embeddings, "float32");
+      this.embSimByType.set(unitType, { size: n, index: newIndex, matrix: data });
+      log6("Rebuilt embedding similarity matrix for %s (index changed): %d units", unitType, embedded.length);
       return;
     }
     const dirtyIds = new Set(embedded.filter((u) => dirtySet.has(u.filePath)).map((u) => u.id));
     if (dirtyIds.size === 0) {
-      log6("Matrix reused: no dirty units detected");
+      log6("Matrix reused for %s: no dirty units detected", unitType);
       return;
     }
-    const n = embedded.length;
-    const newMatrix = Array.from({ length: n }, () => new Array(n).fill(0));
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        if (dirtyIds.has(embedded[i].id) || dirtyIds.has(embedded[j].id)) continue;
-        const oi = this.embSimIndex.get(embedded[i].id);
-        const oj = this.embSimIndex.get(embedded[j].id);
-        if (oi !== void 0 && oj !== void 0) newMatrix[i][j] = this.embSimMatrix[oi][oj];
-      }
-    }
     const dirtyIndices = embedded.reduce((acc, u, i) => dirtyIds.has(u.id) ? [...acc, i] : acc, []);
-    const dirtyRows = await similarityApi.parallelCosineSimilarity(dirtyIndices.map((i) => embeddings[i]), embeddings);
+    const dirtyEmbeddings = dirtyIndices.map((i) => embeddings[i]);
+    const { data: dirtyRows } = await similarityApi.parallelCosineSimilarityFlat(dirtyEmbeddings, embeddings, "float32");
+    const matrix = prior.matrix;
     dirtyIndices.forEach((rowIdx, di) => {
+      const dirtyRowBase = di * n;
+      const fullRowBase = rowIdx * n;
       for (let j = 0; j < n; j++) {
-        newMatrix[rowIdx][j] = dirtyRows[di][j];
-        newMatrix[j][rowIdx] = dirtyRows[di][j];
+        const v = dirtyRows[dirtyRowBase + j] ?? 0;
+        matrix[fullRowBase + j] = v;
+        matrix[j * n + rowIdx] = v;
       }
     });
-    this.embSimIndex = newIndex;
-    this.embSimMatrix = newMatrix;
-    log6("Incremental matrix update: %d dirty unit(s) out of %d total", dirtyIds.size, n);
+    this.embSimByType.set(unitType, { size: n, index: newIndex, matrix });
+    log6("Incremental matrix update for %s: %d dirty unit(s) out of %d total", unitType, dirtyIds.size, n);
   }
   /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
   getEmbSim(id1, id2) {
-    const i = this.embSimIndex.get(id1);
-    const j = this.embSimIndex.get(id2);
-    if (i === void 0 || j === void 0) return void 0;
-    return this.embSimMatrix[i][j];
+    for (const { size, index, matrix } of this.embSimByType.values()) {
+      const i = index.get(id1);
+      const j = index.get(id2);
+      if (i === void 0 || j === void 0) continue;
+      return matrix[i * size + j];
+    }
+    return void 0;
   }
   /** Returns the memoized parent similarity for the given stable key, if available. */
   getParentSim(key) {

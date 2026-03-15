@@ -7,5 +7,5 @@
   "minBlockLines": 0,
   "threshold": 0.8,
   "embeddingSource": "http://localhost:11434",
-  "contextLength": 2048
+  "contextLength": 50
 }

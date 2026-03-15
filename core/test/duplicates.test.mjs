@@ -121,7 +121,7 @@ describe("DryScan - Duplicate Detection", function() {
       expect(dup.exclusionString).to.be.a("string");
     });
 
-    it("uses the embedding similarity matrix cache (parallelCosineSimilarity)", async () => {
+    it("uses the embedding similarity matrix cache (parallelCosineSimilarityFlat)", async () => {
       // Make embeddings that would NOT be duplicates on their own.
       const units = [
         makeUnit("1", "a", [1, 0]),
@@ -135,7 +135,18 @@ describe("DryScan - Duplicate Detection", function() {
         [0, 0, 1],
       ];
 
-      const stub = sinon.stub(similarityApi, "parallelCosineSimilarity").resolves(matrix);
+      const flat = new Float32Array(matrix.length * matrix[0].length);
+      for (let i = 0; i < matrix.length; i++) {
+        for (let j = 0; j < matrix[i].length; j++) {
+          flat[i * matrix[i].length + j] = matrix[i][j];
+        }
+      }
+
+      const stub = sinon.stub(similarityApi, "parallelCosineSimilarityFlat").resolves({
+        data: flat,
+        rows: matrix.length,
+        cols: matrix[0].length,
+      });
 
       const scanner = await stubbedScanner(units, { threshold: 0.9 });
       const report = await scanner.buildDuplicateReport();
@@ -147,7 +158,7 @@ describe("DryScan - Duplicate Detection", function() {
       expect(ids).to.include("1::2");
 
       const group = report.duplicates.find((g) => key(g) === "1::2");
-      expect(group.similarity).to.be.closeTo(0.95, 1e-12);
+      expect(group.similarity).to.be.closeTo(0.95, 1e-5);
     });
 
     it("sorts duplicates by similarity descending", async () => {
