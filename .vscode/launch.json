@@ -78,7 +78,8 @@
       "program": "${workspaceFolder}/cli/src/cli.ts",
       "args": [
         "dupes",
-        "/home/goshenkata/Projects/DryScanDiplomna/datasets/Java/Stand Alone Clones"
+        "/home/goshenkata/Projects/DryScanDiplomna/selfdataset/langchain4j"
+        // "/home/goshenkata/Projects/DryScanDiplomna/datasets/Java/Stand Alone Clones"
         // "./test-java-project"
       ],
       "cwd": "${workspaceFolder}",

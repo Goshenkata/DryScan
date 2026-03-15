@@ -1,7 +1,7 @@
 import {
   parallelCosineSimilarity,
   similarityApi
-} from "../chunk-MBLD5OWH.js";
+} from "../chunk-O4FC2UOS.js";
 export {
   parallelCosineSimilarity,
   similarityApi

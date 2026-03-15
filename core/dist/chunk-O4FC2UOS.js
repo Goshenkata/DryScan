@@ -24,6 +24,7 @@ async function parallelCosineSimilarity(A, B) {
   const sharedB = new SharedArrayBuffer(B.length * dims * 8);
   const bView = new Float64Array(sharedB);
   B.forEach((row, i) => bView.set(row, i * dims));
+  const sharedResult = new SharedArrayBuffer(A.length * B.length * 8);
   const runningTsSource = new URL(import.meta.url).pathname.endsWith(".ts");
   const workerCandidates = runningTsSource ? ["./cosineSimilarityWorker.ts", "./services/cosineSimilarityWorker.ts"] : ["./cosineSimilarityWorker.js", "./services/cosineSimilarityWorker.js"];
   const workerUrl = workerCandidates.map((candidate) => new URL(candidate, import.meta.url)).find((url) => existsSync(fileURLToPath(url)));
@@ -33,23 +34,50 @@ async function parallelCosineSimilarity(A, B) {
     );
   }
   const execArgv = runningTsSource ? ["--import", "tsx/esm"] : [];
+  let rowOffset = 0;
   const chunks = Array.from(
     { length: Math.ceil(A.length / chunkSize) },
-    (_, i) => A.slice(i * chunkSize, (i + 1) * chunkSize)
+    (_, i) => {
+      const chunk = A.slice(i * chunkSize, (i + 1) * chunkSize);
+      const startRow = rowOffset;
+      rowOffset += chunk.length;
+      return { chunk, startRow };
+    }
   );
-  const results = await Promise.all(chunks.map((chunk) => runWorker(chunk, sharedB, B.length, dims, workerUrl, execArgv)));
-  return results.flat();
+  await Promise.all(
+    chunks.map(
+      ({ chunk, startRow }) => runWorker(chunk, sharedB, B.length, dims, sharedResult, startRow, workerUrl, execArgv)
+    )
+  );
+  const resultView = new Float64Array(sharedResult);
+  const result = [];
+  for (let i = 0; i < A.length; i++) {
+    const row = [];
+    for (let j = 0; j < B.length; j++) {
+      row.push(resultView[i * B.length + j]);
+    }
+    result.push(row);
+  }
+  return result;
 }
-function runWorker(chunk, sharedB, bCount, dims, workerUrl, execArgv) {
+function runWorker(chunk, sharedB, bCount, dims, sharedResult, startRow, workerUrl, execArgv) {
   return new Promise((resolve, reject) => {
     const rowsFlat = new Float64Array(chunk.length * dims);
     chunk.forEach((row, i) => rowsFlat.set(row, i * dims));
     const worker = new Worker(workerUrl, {
-      workerData: { rowsBuffer: rowsFlat.buffer, rowCount: chunk.length, allBuffer: sharedB, allCount: bCount, dims },
+      workerData: {
+        rowsBuffer: rowsFlat.buffer,
+        rowCount: chunk.length,
+        allBuffer: sharedB,
+        allCount: bCount,
+        dims,
+        resultBuffer: sharedResult,
+        startRow
+      },
       transferList: [rowsFlat.buffer],
       execArgv
     });
-    worker.once("message", ({ result }) => resolve(result));
+    worker.once("message", () => resolve());
     worker.once("error", reject);
   });
 }
@@ -62,4 +90,4 @@ export {
   parallelCosineSimilarity,
   similarityApi
 };
-//# sourceMappingURL=chunk-MBLD5OWH.js.map
+//# sourceMappingURL=chunk-O4FC2UOS.js.map

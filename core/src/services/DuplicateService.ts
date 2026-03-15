@@ -10,8 +10,7 @@ const log = debug("DryScan:DuplicateService");
 
 export class DuplicateService {
   private config?: DryConfig;
-  private readonly cache = DuplicationCache.getInstance();
-  private simMemo = new Map<string, number>();
+  private readonly duplicationCache = DuplicationCache.getInstance();
 
   constructor(private readonly deps: DryScanServiceDeps) {}
 
@@ -21,32 +20,33 @@ export class DuplicateService {
     previousReport?: DuplicateReport | null
   ): Promise<DuplicateAnalysisResult> {
     this.config = config;
-    this.simMemo = new Map<string, number>();
 
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
     log("Starting duplicate analysis on %d units", allUnits.length);
 
+    // Build (or incrementally update) the embedding similarity matrix once.
+    // Subsequent pairwise comparisons become O(1) lookups.
+    this.duplicationCache.clearRunCaches();
+    await this.duplicationCache.buildEmbSimCache(allUnits, dirtyPaths);
+
     if (allUnits.length < 2) {
       return { duplicates: [], score: this.computeDuplicationScore([], allUnits) };
     }
 
-    if (dirtyPaths.length > 0) {
-      await this.cache.invalidate(dirtyPaths);
-    }
-
-    this.cache.clearRunCaches();
-    await this.cache.buildEmbSimCache(allUnits, dirtyPaths);
-
     const thresholds = this.resolveThresholds(config.threshold);
-    const dirtySet = new Set(dirtyPaths);
-    const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
+  const dirtySet = new Set(dirtyPaths);
+  const canReuseFromReport = Boolean(previousReport && previousReport.threshold === config.threshold);
 
     const reusableClean = canReuseFromReport
       ? this.reuseCleanPairsFromPreviousReport(previousReport as DuplicateReport, allUnits, dirtySet)
       : [];
 
-    const recomputed = this.computeDuplicates(allUnits, thresholds, canReuseFromReport ? dirtySet : null);
+    const recomputed = this.computeDuplicates(
+      allUnits,
+      thresholds,
+      canReuseFromReport ? dirtySet : null
+    );
 
     const merged = this.mergeDuplicates(reusableClean, recomputed);
     const filtered = merged.filter((g) => !this.isGroupExcluded(g));
@@ -57,8 +57,6 @@ export class DuplicateService {
       merged.length - filtered.length,
       reusableClean.length
     );
-
-    this.cache.update(filtered).catch((err) => log("Cache update failed: %O", err));
 
     const score = this.computeDuplicationScore(filtered, allUnits);
     log("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
@@ -103,8 +101,8 @@ export class DuplicateService {
             continue;
           }
 
-          const cached = this.cache.get(left.id, right.id, left.filePath, right.filePath);
-          const similarity = cached ?? this.computeWeightedSimilarity(left, right, threshold);
+          const hasEmbeddings = left.embedding?.length && right.embedding?.length;
+          const similarity = hasEmbeddings ? this.computeWeightedSimilarity(left, right, threshold) : 0;
           if (similarity < threshold) continue;
 
           const exclusionString = this.deps.pairing.pairKeyForUnits(left, right);
@@ -237,26 +235,22 @@ export class DuplicateService {
     const lp = this.findParent(left, type);
     const rp = this.findParent(right, type);
     if (!lp || !rp) return 0;
-
-    const key = lp.id < rp.id ? `${lp.id}::${rp.id}` : `${rp.id}::${lp.id}`;
-    const cached = this.cache.getParentSim(key);
-    if (cached !== undefined) return cached;
-
-    const sim = this.similarity(lp, rp);
-    this.cache.setParentSim(key, sim);
-    return sim;
+    return this.similarity(lp, rp);
   }
 
   private similarity(left: IndexUnit, right: IndexUnit): number {
-    const key = left.id < right.id ? `${left.id}::${right.id}` : `${right.id}::${left.id}`;
-    const memo = this.simMemo.get(key);
-    if (memo !== undefined) return memo;
+    if (left.embedding?.length && right.embedding?.length) {
+      const sim = this.duplicationCache.getEmbSim(left.id, right.id);
+      if (typeof sim === "number") return sim;
 
-    const embSim = this.cache.getEmbSim(left.id, right.id);
-    const value = embSim ?? this.childSimilarity(left, right);
-
-    this.simMemo.set(key, value);
-    return value;
+      // Enforce matrix-only similarity. If this happens it's a bug in the call flow
+      // (e.g. buildEmbSimCache not run with the full set of embedded units).
+      throw new Error(
+        `Embedding similarity matrix missing for unit pair ${left.id} / ${right.id}. ` +
+          `Ensure DuplicationCache.buildEmbSimCache(...) ran before comparisons and included both units.`
+      );
+    }
+    return this.childSimilarity(left, right);
   }
 
   private childSimilarity(left: IndexUnit, right: IndexUnit): number {
