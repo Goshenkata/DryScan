@@ -5,11 +5,13 @@ import { DataSource, Repository, In } from "typeorm";
 import { FileEntity } from "./entities/FileEntity";
 import { IndexUnit } from "../types";
 import { IndexUnitEntity } from "./entities/IndexUnitEntity";
+import { LLMVerdictEntity } from "./entities/LLMVerdictEntity";
 
 export class DryScanDatabase {
   private dataSource?: DataSource;
   private unitRepository?: Repository<IndexUnitEntity>;
   private fileRepository?: Repository<FileEntity>;
+  private verdictRepository?: Repository<LLMVerdictEntity>;
 
   isInitialized(): boolean {
     return !!this.dataSource?.isInitialized;
@@ -21,7 +23,7 @@ export class DryScanDatabase {
     this.dataSource = new DataSource({
       type: "sqlite",
       database: dbPath,
-      entities: [IndexUnitEntity, FileEntity],
+      entities: [IndexUnitEntity, FileEntity, LLMVerdictEntity],
       synchronize: true,
       logging: false,
     });
@@ -29,6 +31,7 @@ export class DryScanDatabase {
     await this.dataSource.initialize();
     this.unitRepository = this.dataSource.getRepository(IndexUnitEntity);
     this.fileRepository = this.dataSource.getRepository(FileEntity);
+    this.verdictRepository = this.dataSource.getRepository(LLMVerdictEntity);
   }
 
   async saveUnit(unit: IndexUnit): Promise<void> {
@@ -123,6 +126,40 @@ export class DryScanDatabase {
   async removeFilesByFilePaths(filePaths: string[]): Promise<void> {
     if (!this.fileRepository) throw new Error("Database not initialized");
     await this.fileRepository.delete({ filePath: In(filePaths) });
+  }
+
+  // ── LLM verdict cache ──────────────────────────────────────────────────────
+
+  /**
+   * Retrieves cached LLM verdicts for the given pair keys.
+   */
+  async getLLMVerdicts(pairKeys: string[]): Promise<LLMVerdictEntity[]> {
+    if (!this.verdictRepository) throw new Error("Database not initialized");
+    if (pairKeys.length === 0) return [];
+    return this.verdictRepository.find({ where: { pairKey: In(pairKeys) } });
+  }
+
+  /**
+   * Upserts LLM verdicts for a batch of pairs.
+   */
+  async saveLLMVerdicts(verdicts: LLMVerdictEntity[]): Promise<void> {
+    if (!this.verdictRepository) throw new Error("Database not initialized");
+    if (verdicts.length === 0) return;
+    await this.verdictRepository.save(verdicts);
+  }
+
+  /**
+   * Removes all cached LLM verdicts where either side's file path matches.
+   * Used to evict stale verdicts when files become dirty.
+   */
+  async removeLLMVerdictsByFilePaths(filePaths: string[]): Promise<void> {
+    if (!this.dataSource?.isInitialized) throw new Error("Database not initialized");
+    if (filePaths.length === 0) return;
+    const placeholders = filePaths.map(() => "?").join(", ");
+    await this.dataSource.query(
+      `DELETE FROM llm_verdicts WHERE leftFilePath IN (${placeholders}) OR rightFilePath IN (${placeholders})`,
+      [...filePaths, ...filePaths]
+    );
   }
 
   async close(): Promise<void> {

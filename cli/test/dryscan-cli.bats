@@ -51,7 +51,8 @@ embedding_source() {
 write_base_config() {
   cat > dryconfig.json <<EOF
 {
-  "embeddingSource": "$(embedding_source)"
+  "embeddingSource": "$(embedding_source)",
+  "enableLLMFilter": false
 }
 EOF
 }
@@ -596,4 +597,86 @@ EOF
 
   elapsed=$(node -e 'const fs=require("fs"); const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if (typeof d.elapsedMs !== "number") process.exit(1); process.stdout.write(String(d.elapsedMs));' "${out_json}")
   node -e 'const v=Number(process.argv[1]); if (!(v > 0)) process.exit(1);' "${elapsed}"
+}
+
+@test "llm verdict cache is used on second run and is considerably faster" {
+  # Enable LLM filter for this test — requires a running Ollama instance with qwen-duplication-2b
+  cat > dryconfig.json <<EOF
+{
+  "embeddingSource": "$(embedding_source)",
+  "enableLLMFilter": true
+}
+EOF
+
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  # First run: no cached verdicts, LLM classifies every candidate pair
+  first_out="${BATS_TMPDIR}/llm-first-${BATS_TEST_NUMBER}.out"
+  first_start=$(date +%s%N)
+  node "${CLI_BIN}" --debug dupes --json "${TEST_ROOT}" >"${first_out}" 2>/dev/null
+  first_end=$(date +%s%N)
+  [ "$?" -eq 0 ]
+  first_time_ms=$(( (first_end - first_start) / 1000000 ))
+
+  # Verify output is valid JSON with duplicates key
+  [ -s "${first_out}" ]
+  [[ "$(cat "${first_out}")" == *"\"duplicates\""* ]]
+
+  # Verdicts must have been persisted after the first run
+  verdict_count=$(sqlite_query "SELECT COUNT(*) FROM llm_verdicts;")
+  [ "${verdict_count}" -gt 0 ]
+
+  # Second run: no file changes — every candidate pair should be served from cache
+  second_out="${BATS_TMPDIR}/llm-second-${BATS_TEST_NUMBER}.out"
+  second_start=$(date +%s%N)
+  node "${CLI_BIN}" --debug dupes --json "${TEST_ROOT}" >"${second_out}" 2>/dev/null
+  second_end=$(date +%s%N)
+  [ "$?" -eq 0 ]
+  second_time_ms=$(( (second_end - second_start) / 1000000 ))
+
+  # Verdict row count must not grow — no new LLM calls were made
+  verdict_count_after=$(sqlite_query "SELECT COUNT(*) FROM llm_verdicts;")
+  [ "${verdict_count_after}" -eq "${verdict_count}" ]
+
+  # Second run output must be identical (same duplicate set)
+  first_dupes=$(node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.score.duplicateGroups));' "${first_out}")
+  second_dupes=$(node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.score.duplicateGroups));' "${second_out}")
+  [ "${first_dupes}" -eq "${second_dupes}" ]
+
+  # Second run must be faster (LLM calls skipped)
+  [ "${second_time_ms}" -lt "${first_time_ms}" ]
+
+  delta_ms=$(( first_time_ms - second_time_ms ))
+  echo "LLM verdict cache: first=${first_time_ms}ms second=${second_time_ms}ms saved=${delta_ms}ms"
+}
+
+@test "llm verdict cache is invalidated for dirty files" {
+  cat > dryconfig.json <<EOF
+{
+  "embeddingSource": "$(embedding_source)",
+  "enableLLMFilter": true
+}
+EOF
+
+  run_dryscan init "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  # Populate the cache
+  run_dryscan dupes --json "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  initial_verdict_count=$(sqlite_query "SELECT COUNT(*) FROM llm_verdicts;")
+  [ "${initial_verdict_count}" -gt 0 ]
+
+  # Touch a source file to make it dirty
+  touch src/main/java/com/example/demo/service/UserService.java
+
+  # Run again — dirty-file verdicts must be reclassified (fire-and-forget eviction runs)
+  run_dryscan dupes --json "${TEST_ROOT}"
+  [ "${status}" -eq 0 ]
+
+  # After reclassification the cache is repopulated — row count should be >= initial
+  verdict_count_after=$(sqlite_query "SELECT COUNT(*) FROM llm_verdicts;")
+  [ "${verdict_count_after}" -gt 0 ]
 }

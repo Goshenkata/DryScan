@@ -5,6 +5,7 @@ import { DuplicateAnalysisResult, DuplicateGroup, DuplicateReport, DuplicationSc
 import { indexConfig } from "../config/indexConfig";
 import { DryConfig } from "../types";
 import { DuplicationCache } from "./DuplicationCache";
+import { LLMFalsePositiveDetector } from "./LLMFalsePositiveDetector";
 
 const log = debug("DryScan:DuplicateService");
 
@@ -57,6 +58,27 @@ export class DuplicateService {
       merged.length - filtered.length,
       reusableClean.length
     );
+
+    // LLM false-positive filter (opt-in, default ON via enableLLMFilter config)
+    if (config.enableLLMFilter) {
+      // Fire-and-forget: evict stale LLM verdicts for files that just changed.
+      // The detector's dirtySet check guarantees correctness; this is DB hygiene.
+      if (dirtyPaths.length > 0) {
+        void this.deps.db.removeLLMVerdictsByFilePaths(dirtyPaths).catch((err) => {
+          log("Failed to evict stale LLM verdicts: %s", (err as Error).message);
+        });
+      }
+      const detector = new LLMFalsePositiveDetector(this.deps.repoPath, this.deps.db);
+      const decision = await detector.classify(filtered, dirtyPaths);
+      log(
+        "LLM filter: %d true positives, %d false positives",
+        decision.truePositives.length,
+        decision.falsePositives.length
+      );
+      const score = this.computeDuplicationScore(decision.truePositives, allUnits);
+      log("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+      return { duplicates: decision.truePositives, score };
+    }
 
     const score = this.computeDuplicationScore(filtered, allUnits);
     log("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
