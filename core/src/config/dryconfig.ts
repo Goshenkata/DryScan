@@ -14,6 +14,7 @@ export const DEFAULT_CONFIG: DryConfig = {
   threshold: 0.8,
   embeddingSource: "http://localhost:11434",
   contextLength: 2048,
+  enableLLMFilter: true,
 };
 
 const validator = new Validator();
@@ -28,6 +29,7 @@ const partialConfigSchema: Schema = {
     threshold: { type: "number" },
     embeddingSource: { type: "string" },
     contextLength: { type: "number" },
+    enableLLMFilter: { type: "boolean" },
   },
 };
 
@@ -41,6 +43,7 @@ const fullConfigSchema: Schema = {
     "threshold",
     "embeddingSource",
     "contextLength",
+    "enableLLMFilter",
   ],
 };
 

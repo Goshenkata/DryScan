@@ -17,6 +17,10 @@ export function buildTestConfig(overrides = {}) {
   return {
     ...DEFAULT_CONFIG,
     ...embeddingDefaults,
+    // Disable LLM filter by default in tests — it requires a live Ollama instance
+    // and would make every unit test hit the network. Tests that specifically test
+    // LLM filtering pass { enableLLMFilter: true } as an override.
+    enableLLMFilter: false,
     ...overrides,
   };
 }

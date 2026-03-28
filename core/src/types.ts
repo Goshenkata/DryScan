@@ -53,6 +53,13 @@ export interface DryConfig {
   threshold: number;
   embeddingSource: string;
   contextLength: number;
+  /** When true, confirmed duplicate candidates are sent to the fine-tuned LLM for false-positive filtering. Default: true. */
+  enableLLMFilter: boolean;
+}
+
+export interface LLMDecision {
+  truePositives: DuplicateGroup[];
+  falsePositives: DuplicateGroup[];
 }
 
 export interface IndexUnit {
