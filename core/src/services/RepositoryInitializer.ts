@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import { DryScanServiceDeps } from "./types";
 import { ExclusionService } from "./ExclusionService";
 import { IndexUnit } from "../types";
-import { EmbeddingService } from "./EmbeddingService";
+import { ModelConnector } from "./ModelConnector";
 import { FileEntity } from "../db/entities/FileEntity";
 import { IndexUnitExtractor } from "../IndexUnitExtractor";
 
@@ -47,12 +47,12 @@ export class RepositoryInitializer {
 
     const updated: IndexUnit[] = [];
     const progressInterval = Math.max(1, Math.ceil(total / 10));
-    const embeddingService = new EmbeddingService(this.deps.repoPath);
+    const connector = new ModelConnector(this.deps.repoPath);
 
     for (let i = 0; i < total; i++) {
       const unit = allUnits[i];
       try {
-        const enriched = await embeddingService.addEmbedding(unit);
+        const enriched = await connector.embed(unit);
         updated.push(enriched);
       } catch (err: any) {
         console.error(

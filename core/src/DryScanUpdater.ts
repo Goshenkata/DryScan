@@ -5,7 +5,7 @@ import { IndexUnit } from "./types";
 import { IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
 import { FileEntity } from "./db/entities/FileEntity";
-import { EmbeddingService } from "./services/EmbeddingService";
+import { ModelConnector } from "./services/ModelConnector";
 
 const log = debug("DryScan:Updater");
 
@@ -169,7 +169,7 @@ export async function performIncrementalUpdate(
   db: DryScanDatabase,
 ): Promise<FileChangeSet> {
   log("Starting incremental update");
-  const embeddingService = new EmbeddingService(repoPath);
+  const connector = new ModelConnector(repoPath);
   
   // Step 1: Detect changes
   const changeSet = await detectFileChanges(repoPath, extractor, db);
@@ -207,7 +207,7 @@ export async function performIncrementalUpdate(
       for (let i = 0; i < total; i++) {
         const unit = newUnits[i];
         try {
-          const enriched = await embeddingService.addEmbedding(unit);
+          const enriched = await connector.embed(unit);
           updatedWithEmbeddings.push(enriched);
         } catch (err: any) {
           console.error(

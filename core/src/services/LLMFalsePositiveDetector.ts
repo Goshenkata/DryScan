@@ -4,15 +4,9 @@ import debug from "debug";
 import { DuplicateGroup, LLMDecision } from "../types";
 import { DryScanDatabase } from "../db/DryScanDatabase";
 import { LLMVerdictEntity } from "../db/entities/LLMVerdictEntity";
-import { configStore } from "../config/configStore";
+import { ModelConnector } from "./ModelConnector";
 
 const log = debug("DryScan:LLMFalsePositiveDetector");
-
-/**
- * Fine-tuned model used for false-positive classification.
- * Must be loaded in Ollama with the Qwen3-instruct chat template (see TRAINING_FORMAT.md).
- */
-const LLM_MODEL = "qwen-duplication-2b:latest";
 
 /**
  * Maximum number of LLM classification requests dispatched in parallel per batch.
@@ -21,7 +15,7 @@ const CONCURRENCY_LIMIT = 20;
 
 /**
  * Classifies embedding-confirmed duplicate candidates via a fine-tuned LLM
- * (qwen-duplication-2b) to separate true duplicates from false positives.
+ * (qwen-duplication-2b, served by Ollama) to separate true duplicates from false positives.
  *
  * Verdicts are persisted in the `llm_verdicts` table and reused on subsequent
  * runs as long as neither file in the pair has changed (dirty-path invalidation
@@ -31,10 +25,14 @@ const CONCURRENCY_LIMIT = 20;
  * implementations are added to the pipeline.
  */
 export class LLMFalsePositiveDetector {
+  private readonly connector: ModelConnector;
+
   constructor(
     private readonly repoPath: string,
     private readonly db: DryScanDatabase
-  ) {}
+  ) {
+    this.connector = new ModelConnector(repoPath);
+  }
 
   /**
    * Classifies `candidates` as true positives or false positives.
@@ -120,47 +118,15 @@ export class LLMFalsePositiveDetector {
     group: DuplicateGroup
   ): Promise<{ group: DuplicateGroup; verdict: "yes" | "no" }> {
     try {
-      const config = await configStore.get(this.repoPath);
-      const ollamaBaseUrl = this.resolveOllamaBaseUrl(config.embeddingSource);
       const prompt = await this.buildPrompt(group);
-
-      const response = await fetch(`${ollamaBaseUrl}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          messages: [{ role: "user", content: prompt }],
-          stream: false,
-          options: { temperature: 0, num_predict: 32 },
-        }),
-      });
-
-      if (!response.ok) {
-        log("LLM request failed for pair %s: HTTP %d — defaulting to true positive", this.pairKey(group), response.status);
-        return { group, verdict: "yes" };
-      }
-
-      const data = (await response.json()) as { message?: { content?: string } };
-      const raw = data.message?.content?.trim().toLowerCase() ?? "";
-      const verdict: "yes" | "no" = raw.startsWith("yes") ? "yes" : "no";
+      const raw = await this.connector.chat(prompt);
+      const verdict: "yes" | "no" = raw.toLowerCase().startsWith("yes") ? "yes" : "no";
       log("Pair %s → %s (raw: %s)", this.pairKey(group), verdict, raw);
       return { group, verdict };
     } catch (err) {
       log("LLM classification error for pair %s: %s — defaulting to true positive", this.pairKey(group), (err as Error).message);
       return { group, verdict: "yes" };
     }
-  }
-
-  /**
-   * Extracts the Ollama base URL from the configured embeddingSource.
-   * Falls back to http://localhost:11434 for non-URL values (e.g. "ollama", "huggingface").
-   */
-  private resolveOllamaBaseUrl(embeddingSource: string): string {
-    if (/^https?:\/\//i.test(embeddingSource)) {
-      const url = new URL(embeddingSource);
-      return `${url.protocol}//${url.host}`;
-    }
-    return "http://localhost:11434";
   }
 
   /**
