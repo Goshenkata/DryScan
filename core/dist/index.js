@@ -5,7 +5,7 @@ import {
 
 // src/DryScan.ts
 import upath6 from "upath";
-import fs7 from "fs/promises";
+import fs8 from "fs/promises";
 
 // src/const.ts
 var DRYSCAN_DIR = ".dry";
@@ -58,7 +58,8 @@ var DEFAULT_CONFIG = {
   minBlockLines: 5,
   threshold: 0.8,
   embeddingSource: "http://localhost:11434",
-  contextLength: 2048
+  contextLength: 2048,
+  enableLLMFilter: true
 };
 var validator = new Validator();
 var partialConfigSchema = {
@@ -70,7 +71,8 @@ var partialConfigSchema = {
     minBlockLines: { type: "number" },
     threshold: { type: "number" },
     embeddingSource: { type: "string" },
-    contextLength: { type: "number" }
+    contextLength: { type: "number" },
+    enableLLMFilter: { type: "boolean" }
   }
 };
 var fullConfigSchema = {
@@ -82,7 +84,8 @@ var fullConfigSchema = {
     "minBlockLines",
     "threshold",
     "embeddingSource",
-    "contextLength"
+    "contextLength",
+    "enableLLMFilter"
   ]
 };
 function validateConfig(raw, schema, source) {
@@ -795,11 +798,40 @@ IndexUnitEntity = __decorateClass([
   Entity2("index_units")
 ], IndexUnitEntity);
 
+// src/db/entities/LLMVerdictEntity.ts
+import { Entity as Entity3, PrimaryColumn as PrimaryColumn3, Column as Column3 } from "typeorm";
+var LLMVerdictEntity = class {
+  pairKey;
+  verdict;
+  leftFilePath;
+  rightFilePath;
+  createdAt;
+};
+__decorateClass([
+  PrimaryColumn3("text")
+], LLMVerdictEntity.prototype, "pairKey", 2);
+__decorateClass([
+  Column3("text")
+], LLMVerdictEntity.prototype, "verdict", 2);
+__decorateClass([
+  Column3("text")
+], LLMVerdictEntity.prototype, "leftFilePath", 2);
+__decorateClass([
+  Column3("text")
+], LLMVerdictEntity.prototype, "rightFilePath", 2);
+__decorateClass([
+  Column3("integer")
+], LLMVerdictEntity.prototype, "createdAt", 2);
+LLMVerdictEntity = __decorateClass([
+  Entity3("llm_verdicts")
+], LLMVerdictEntity);
+
 // src/db/DryScanDatabase.ts
 var DryScanDatabase = class {
   dataSource;
   unitRepository;
   fileRepository;
+  verdictRepository;
   isInitialized() {
     return !!this.dataSource?.isInitialized;
   }
@@ -808,13 +840,14 @@ var DryScanDatabase = class {
     this.dataSource = new DataSource({
       type: "sqlite",
       database: dbPath,
-      entities: [IndexUnitEntity, FileEntity],
+      entities: [IndexUnitEntity, FileEntity, LLMVerdictEntity],
       synchronize: true,
       logging: false
     });
     await this.dataSource.initialize();
     this.unitRepository = this.dataSource.getRepository(IndexUnitEntity);
     this.fileRepository = this.dataSource.getRepository(FileEntity);
+    this.verdictRepository = this.dataSource.getRepository(LLMVerdictEntity);
   }
   async saveUnit(unit) {
     await this.saveUnits(unit);
@@ -896,6 +929,36 @@ var DryScanDatabase = class {
   async removeFilesByFilePaths(filePaths) {
     if (!this.fileRepository) throw new Error("Database not initialized");
     await this.fileRepository.delete({ filePath: In(filePaths) });
+  }
+  // ── LLM verdict cache ──────────────────────────────────────────────────────
+  /**
+   * Retrieves cached LLM verdicts for the given pair keys.
+   */
+  async getLLMVerdicts(pairKeys) {
+    if (!this.verdictRepository) throw new Error("Database not initialized");
+    if (pairKeys.length === 0) return [];
+    return this.verdictRepository.find({ where: { pairKey: In(pairKeys) } });
+  }
+  /**
+   * Upserts LLM verdicts for a batch of pairs.
+   */
+  async saveLLMVerdicts(verdicts) {
+    if (!this.verdictRepository) throw new Error("Database not initialized");
+    if (verdicts.length === 0) return;
+    await this.verdictRepository.save(verdicts);
+  }
+  /**
+   * Removes all cached LLM verdicts where either side's file path matches.
+   * Used to evict stale verdicts when files become dirty.
+   */
+  async removeLLMVerdictsByFilePaths(filePaths) {
+    if (!this.dataSource?.isInitialized) throw new Error("Database not initialized");
+    if (filePaths.length === 0) return;
+    const placeholders = filePaths.map(() => "?").join(", ");
+    await this.dataSource.query(
+      `DELETE FROM llm_verdicts WHERE leftFilePath IN (${placeholders}) OR rightFilePath IN (${placeholders})`,
+      [...filePaths, ...filePaths]
+    );
   }
   async close() {
     if (this.dataSource?.isInitialized) {
@@ -1385,7 +1448,7 @@ var PairingService = class {
 import { existsSync } from "fs";
 
 // src/services/DuplicateService.ts
-import debug7 from "debug";
+import debug8 from "debug";
 import shortUuid from "short-uuid";
 
 // src/services/DuplicationCache.ts
@@ -1577,8 +1640,195 @@ var DuplicationCache = class _DuplicationCache {
   }
 };
 
+// src/services/LLMFalsePositiveDetector.ts
+import fs7 from "fs/promises";
+import path5 from "path";
+import debug7 from "debug";
+var log7 = debug7("DryScan:LLMFalsePositiveDetector");
+var LLM_MODEL = "qwen-duplication-2b:latest";
+var CONCURRENCY_LIMIT = 20;
+var LLMFalsePositiveDetector = class {
+  constructor(repoPath, db) {
+    this.repoPath = repoPath;
+    this.db = db;
+  }
+  /**
+   * Classifies `candidates` as true positives or false positives.
+   *
+   * Cache behaviour:
+   * - Pairs where NEITHER file is in `dirtyPaths` and a cached verdict exists → reuse.
+   * - All other pairs → call the LLM and persist the new verdict.
+   */
+  async classify(candidates, dirtyPaths) {
+    if (candidates.length === 0) {
+      return { truePositives: [], falsePositives: [] };
+    }
+    const dirtySet = new Set(dirtyPaths);
+    const pairKeys = candidates.map((g) => this.pairKey(g));
+    const cached = await this.db.getLLMVerdicts(pairKeys);
+    const verdictMap = new Map(cached.map((v) => [v.pairKey, v.verdict]));
+    const toClassify = candidates.filter((g) => {
+      if (dirtySet.has(g.left.filePath) || dirtySet.has(g.right.filePath)) return true;
+      return !verdictMap.has(this.pairKey(g));
+    });
+    log7(
+      "%d candidates: %d from cache, %d need classification",
+      candidates.length,
+      candidates.length - toClassify.length,
+      toClassify.length
+    );
+    if (toClassify.length > 0) {
+      const newVerdicts = await this.classifyWithConcurrency(toClassify);
+      const entities = newVerdicts.map(
+        ({ group, verdict }) => Object.assign(new LLMVerdictEntity(), {
+          pairKey: this.pairKey(group),
+          verdict,
+          leftFilePath: group.left.filePath,
+          rightFilePath: group.right.filePath,
+          createdAt: Date.now()
+        })
+      );
+      await this.db.saveLLMVerdicts(entities);
+      for (const { group, verdict } of newVerdicts) {
+        verdictMap.set(this.pairKey(group), verdict);
+      }
+    }
+    const truePositives = [];
+    const falsePositives = [];
+    for (const group of candidates) {
+      if (verdictMap.get(this.pairKey(group)) === "no") {
+        falsePositives.push(group);
+      } else {
+        truePositives.push(group);
+      }
+    }
+    log7("%d true positives, %d false positives", truePositives.length, falsePositives.length);
+    return { truePositives, falsePositives };
+  }
+  /** Stable, order-independent pair key matching DuplicateService.groupKey. */
+  pairKey(group) {
+    return [group.left.id, group.right.id].sort().join("::");
+  }
+  async classifyWithConcurrency(groups) {
+    const results = [];
+    for (let i = 0; i < groups.length; i += CONCURRENCY_LIMIT) {
+      const batch = groups.slice(i, i + CONCURRENCY_LIMIT);
+      const batchResults = await Promise.all(batch.map((g) => this.classifyPair(g)));
+      results.push(...batchResults);
+    }
+    return results;
+  }
+  async classifyPair(group) {
+    try {
+      const config = await configStore.get(this.repoPath);
+      const ollamaBaseUrl = this.resolveOllamaBaseUrl(config.embeddingSource);
+      const prompt = await this.buildPrompt(group);
+      const response = await fetch(`${ollamaBaseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: LLM_MODEL,
+          messages: [{ role: "user", content: prompt }],
+          stream: false,
+          options: { temperature: 0, num_predict: 32 }
+        })
+      });
+      if (!response.ok) {
+        log7("LLM request failed for pair %s: HTTP %d \u2014 defaulting to true positive", this.pairKey(group), response.status);
+        return { group, verdict: "yes" };
+      }
+      const data = await response.json();
+      const raw = data.message?.content?.trim().toLowerCase() ?? "";
+      const verdict = raw.startsWith("yes") ? "yes" : "no";
+      log7("Pair %s \u2192 %s (raw: %s)", this.pairKey(group), verdict, raw);
+      return { group, verdict };
+    } catch (err) {
+      log7("LLM classification error for pair %s: %s \u2014 defaulting to true positive", this.pairKey(group), err.message);
+      return { group, verdict: "yes" };
+    }
+  }
+  /**
+   * Extracts the Ollama base URL from the configured embeddingSource.
+   * Falls back to http://localhost:11434 for non-URL values (e.g. "ollama", "huggingface").
+   */
+  resolveOllamaBaseUrl(embeddingSource) {
+    if (/^https?:\/\//i.test(embeddingSource)) {
+      const url = new URL(embeddingSource);
+      return `${url.protocol}//${url.host}`;
+    }
+    return "http://localhost:11434";
+  }
+  /**
+   * Builds the inference prompt matching the training format documented in
+   * DryScanDiplomna/finetune/TRAINING_FORMAT.md.
+   *
+   * TODO: detect language from file extension once more LanguageExtractors are added.
+   *       Currently hardcoded to "java".
+   */
+  async buildPrompt(group) {
+    const projectName = path5.basename(this.repoPath);
+    const lang = "java";
+    const [fileAContent, fileBContent] = await Promise.all([
+      fs7.readFile(path5.join(this.repoPath, group.left.filePath), "utf8").catch(() => ""),
+      fs7.readFile(path5.join(this.repoPath, group.right.filePath), "utf8").catch(() => "")
+    ]);
+    const lines = [
+      "You are a strict code-duplication judge.",
+      "",
+      "Task:",
+      "Decide if Snippet A and Snippet B count as duplicated code.",
+      "Answer based on BOTH the snippets and their full-file context.",
+      "",
+      "Definition (return 'yes' if ANY apply):",
+      "- Straight/near clone (small edits, renames, reformatting).",
+      "- Semantic duplicate: different syntax but same behavior/intent.",
+      "- Extractable duplicate: not identical, but a reasonable shared helper/abstraction could be extracted.",
+      "Return 'no' ONLY if they clearly implement different responsibilities/logic and are not reasonably extractable.",
+      "",
+      "Output rules (mandatory):",
+      "- Output EXACTLY one token: yes OR no",
+      "- No punctuation, no extra words, no explanations",
+      "- Think silently before answering",
+      "",
+      "Evidence:",
+      "",
+      `=== Snippet A (project=${projectName} id=${group.left.id}) ===`,
+      `name: ${group.left.name}`,
+      `unitType: ${group.left.unitType}`,
+      `filePath: ${group.left.filePath}`,
+      `lines: ${group.left.startLine}-${group.left.endLine}`,
+      "```" + lang,
+      group.left.code,
+      "```",
+      "",
+      `=== Snippet B (project=${projectName} id=${group.right.id}) ===`,
+      `name: ${group.right.name}`,
+      `unitType: ${group.right.unitType}`,
+      `filePath: ${group.right.filePath}`,
+      `lines: ${group.right.startLine}-${group.right.endLine}`,
+      "```" + lang,
+      group.right.code,
+      "```",
+      "",
+      `=== Full file A: ${group.left.filePath} ===`,
+      "```" + lang,
+      fileAContent,
+      "```",
+      "",
+      `=== Full file B: ${group.right.filePath} ===`,
+      "```" + lang,
+      fileBContent,
+      "```",
+      "",
+      "Question: Are Snippet A and Snippet B duplicated code under the definition above?",
+      "Answer:"
+    ];
+    return lines.join("\n");
+  }
+};
+
 // src/services/DuplicateService.ts
-var log7 = debug7("DryScan:DuplicateService");
+var log8 = debug8("DryScan:DuplicateService");
 var DuplicateService = class {
   constructor(deps) {
     this.deps = deps;
@@ -1589,7 +1839,7 @@ var DuplicateService = class {
     this.config = config;
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
-    log7("Starting duplicate analysis on %d units", allUnits.length);
+    log8("Starting duplicate analysis on %d units", allUnits.length);
     this.duplicationCache.clearRunCaches();
     await this.duplicationCache.buildEmbSimCache(allUnits, dirtyPaths);
     if (allUnits.length < 2) {
@@ -1606,14 +1856,31 @@ var DuplicateService = class {
     );
     const merged = this.mergeDuplicates(reusableClean, recomputed);
     const filtered = merged.filter((g) => !this.isGroupExcluded(g));
-    log7(
+    log8(
       "Found %d duplicate groups (%d excluded, %d reused)",
       filtered.length,
       merged.length - filtered.length,
       reusableClean.length
     );
+    if (config.enableLLMFilter) {
+      if (dirtyPaths.length > 0) {
+        void this.deps.db.removeLLMVerdictsByFilePaths(dirtyPaths).catch((err) => {
+          log8("Failed to evict stale LLM verdicts: %s", err.message);
+        });
+      }
+      const detector = new LLMFalsePositiveDetector(this.deps.repoPath, this.deps.db);
+      const decision = await detector.classify(filtered, dirtyPaths);
+      log8(
+        "LLM filter: %d true positives, %d false positives",
+        decision.truePositives.length,
+        decision.falsePositives.length
+      );
+      const score2 = this.computeDuplicationScore(decision.truePositives, allUnits);
+      log8("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+      return { duplicates: decision.truePositives, score: score2 };
+    }
     const score = this.computeDuplicationScore(filtered, allUnits);
-    log7("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+    log8("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
     return { duplicates: filtered, score };
   }
   resolveThresholds(functionThreshold) {
@@ -1628,14 +1895,14 @@ var DuplicateService = class {
   }
   computeDuplicates(units, thresholds, dirtySet) {
     if (dirtySet && dirtySet.size === 0) {
-      log7("Skipping recomputation: no dirty files and previous report threshold matches");
+      log8("Skipping recomputation: no dirty files and previous report threshold matches");
       return [];
     }
     const duplicates = [];
     const t0 = performance.now();
     for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
-      log7("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
+      log8("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
           const left = typedUnits[i];
@@ -1660,7 +1927,7 @@ var DuplicateService = class {
         }
       }
     }
-    log7("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
+    log8("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
   reuseCleanPairsFromPreviousReport(report, units, dirtySet) {
@@ -1671,7 +1938,7 @@ var DuplicateService = class {
       if (leftDirty || rightDirty) return false;
       return unitIds.has(group.left.id) && unitIds.has(group.right.id);
     });
-    log7("Reused %d clean-clean duplicate groups from previous report", reusable.length);
+    log8("Reused %d clean-clean duplicate groups from previous report", reusable.length);
     return reusable;
   }
   mergeDuplicates(reused, recomputed) {
@@ -1938,7 +2205,7 @@ var DryScan = class {
   async ensureDatabase() {
     if (this.db.isInitialized()) return;
     const dbPath = upath6.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
-    await fs7.mkdir(upath6.dirname(dbPath), { recursive: true });
+    await fs8.mkdir(upath6.dirname(dbPath), { recursive: true });
     await this.db.init(dbPath);
   }
   async loadConfig() {
@@ -1946,16 +2213,16 @@ var DryScan = class {
   }
   async saveReport(report) {
     const reportDir = upath6.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
-    await fs7.mkdir(reportDir, { recursive: true });
+    await fs8.mkdir(reportDir, { recursive: true });
     const safeTimestamp = report.generatedAt.replace(/[:.]/g, "-");
     const reportPath = upath6.join(reportDir, `dupes-${safeTimestamp}.json`);
-    await fs7.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
+    await fs8.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
   }
   async loadLatestReport() {
     const reportDir = upath6.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
     let entries;
     try {
-      entries = await fs7.readdir(reportDir);
+      entries = await fs8.readdir(reportDir);
     } catch (err) {
       if (err?.code === "ENOENT") return null;
       throw err;
@@ -1965,13 +2232,13 @@ var DryScan = class {
     const withStats = await Promise.all(
       jsonReports.map(async (name) => {
         const fullPath = upath6.join(reportDir, name);
-        const stat = await fs7.stat(fullPath);
+        const stat = await fs8.stat(fullPath);
         return { fullPath, mtimeMs: stat.mtimeMs };
       })
     );
     withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
     const latest = withStats[0];
-    const raw = await fs7.readFile(latest.fullPath, "utf8");
+    const raw = await fs8.readFile(latest.fullPath, "utf8");
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.duplicates) || typeof parsed.threshold !== "number") {
       return null;

@@ -43,6 +43,8 @@ interface DryConfig {
     threshold: number;
     embeddingSource: string;
     contextLength: number;
+    /** When true, confirmed duplicate candidates are sent to the fine-tuned LLM for false-positive filtering. Default: true. */
+    enableLLMFilter: boolean;
 }
 interface IndexUnit {
     id: string;
@@ -143,10 +145,28 @@ declare class FileEntity {
     mtime: number;
 }
 
+/**
+ * Persisted LLM classification verdict for a duplicate candidate pair.
+ * Used to skip re-classification on subsequent runs when neither file has changed.
+ */
+declare class LLMVerdictEntity {
+    /** Stable, order-independent key: sorted(left.id, right.id).join("::") */
+    pairKey: string;
+    /** "yes" = confirmed duplicate, "no" = false positive */
+    verdict: "yes" | "no";
+    /** File path of the left unit — used to invalidate when the file becomes dirty */
+    leftFilePath: string;
+    /** File path of the right unit — used to invalidate when the file becomes dirty */
+    rightFilePath: string;
+    /** Unix timestamp (ms) when the verdict was recorded */
+    createdAt: number;
+}
+
 declare class DryScanDatabase {
     private dataSource?;
     private unitRepository?;
     private fileRepository?;
+    private verdictRepository?;
     isInitialized(): boolean;
     init(dbPath: string): Promise<void>;
     saveUnit(unit: IndexUnit): Promise<void>;
@@ -185,6 +205,19 @@ declare class DryScanDatabase {
      * Used when files are deleted from repository.
      */
     removeFilesByFilePaths(filePaths: string[]): Promise<void>;
+    /**
+     * Retrieves cached LLM verdicts for the given pair keys.
+     */
+    getLLMVerdicts(pairKeys: string[]): Promise<LLMVerdictEntity[]>;
+    /**
+     * Upserts LLM verdicts for a batch of pairs.
+     */
+    saveLLMVerdicts(verdicts: LLMVerdictEntity[]): Promise<void>;
+    /**
+     * Removes all cached LLM verdicts where either side's file path matches.
+     * Used to evict stale verdicts when files become dirty.
+     */
+    removeLLMVerdictsByFilePaths(filePaths: string[]): Promise<void>;
     close(): Promise<void>;
 }
 
