@@ -971,73 +971,103 @@ var DryScanDatabase = class {
 import path3 from "path";
 import fs5 from "fs/promises";
 
-// src/services/EmbeddingService.ts
+// src/services/ModelConnector.ts
 import debug2 from "debug";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
-var log2 = debug2("DryScan:EmbeddingService");
-var OLLAMA_MODEL = "qwen3-embedding:0.6b";
-var HUGGINGFACE_MODEL = "Qwen/Qwen3-Embedding-0.6B";
-var EmbeddingService = class {
+var log2 = debug2("DryScan:ModelConnector");
+var OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:0.6b";
+var HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
+var OLLAMA_CHAT_MODEL = "qwen-duplication-2b:latest";
+var ModelConnector = class {
   constructor(repoPath) {
     this.repoPath = repoPath;
   }
+  // ── Embeddings ─────────────────────────────────────────────────────────────
   /**
-   * Generates an embedding for the given index unit using the configured provider.
-   * Skips embedding if code exceeds the configured context length.
+   * Generates a vector embedding for a code unit.
+   * Returns the unit unchanged (with `embedding: null`) if code exceeds `contextLength`.
    */
-  async addEmbedding(fn) {
+  async embed(unit) {
     const config = await configStore.get(this.repoPath);
     const maxContext = config?.contextLength ?? 2048;
-    if (fn.code.length > maxContext) {
-      log2(
-        "Skipping embedding for %s (code length %d exceeds context %d)",
-        fn.id,
-        fn.code.length,
-        maxContext
-      );
-      return { ...fn, embedding: null };
+    if (unit.code.length > maxContext) {
+      log2("Skipping embedding for %s (code %d > context %d)", unit.id, unit.code.length, maxContext);
+      return { ...unit, embedding: null };
     }
     const source = config.embeddingSource;
     if (!source) {
-      const message = `Embedding source is not configured for repository at ${this.repoPath}`;
-      log2(message);
-      throw new Error(message);
+      throw new Error(`Embedding source is not configured for repository at ${this.repoPath}`);
     }
-    const embeddings = this.buildProvider(source);
-    const embedding = await embeddings.embedQuery(fn.code);
-    return { ...fn, embedding };
+    const provider = this.buildEmbeddingProvider(source);
+    const embedding = await provider.embedQuery(unit.code);
+    return { ...unit, embedding };
   }
+  // ── Chat completions ───────────────────────────────────────────────────────
   /**
-   * Builds the embedding provider based on the source configuration.
-   * - URL (http/https): Uses Ollama with "embeddinggemma" model
-   * - "huggingface": Uses HuggingFace Inference API with "embeddinggemma-300m" model
+   * Sends a prompt to the fine-tuned duplication classifier (qwen-duplication-2b)
+   * and returns the raw response text (expected: "yes" or "no").
+   *
+   * Throws on non-OK HTTP status so callers can decide on fallback behaviour.
    */
-  buildProvider(source) {
+  async chat(prompt) {
+    const config = await configStore.get(this.repoPath);
+    const baseUrl = this.resolveOllamaChatBaseUrl(config.embeddingSource);
+    log2("Sending chat request to %s using model %s", baseUrl, OLLAMA_CHAT_MODEL);
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_CHAT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+        options: { temperature: 0, num_predict: 32 }
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`Ollama chat request failed: HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    return data.message?.content?.trim() ?? "";
+  }
+  // ── Private helpers ────────────────────────────────────────────────────────
+  buildEmbeddingProvider(source) {
     if (source.toLowerCase() === "huggingface") {
-      log2("Using HuggingFace Inference with model: %s", HUGGINGFACE_MODEL);
+      log2("Using HuggingFace Inference with model: %s", HUGGINGFACE_EMBEDDING_MODEL);
       return new HuggingFaceInferenceEmbeddings({
-        model: HUGGINGFACE_MODEL,
+        model: HUGGINGFACE_EMBEDDING_MODEL,
         provider: "hf-inference"
       });
     }
-    const ollamaBaseUrl = this.resolveOllamaBaseUrl(source);
+    const ollamaBaseUrl = this.resolveOllamaEmbeddingBaseUrl(source);
     if (ollamaBaseUrl !== null) {
-      log2("Using Ollama%s with model: %s", ollamaBaseUrl ? ` at ${ollamaBaseUrl}` : "", OLLAMA_MODEL);
-      return new OllamaEmbeddings({ model: OLLAMA_MODEL, ...ollamaBaseUrl && { baseUrl: ollamaBaseUrl } });
+      log2("Using Ollama%s with model: %s", ollamaBaseUrl ? ` at ${ollamaBaseUrl}` : "", OLLAMA_EMBEDDING_MODEL);
+      return new OllamaEmbeddings({
+        model: OLLAMA_EMBEDDING_MODEL,
+        ...ollamaBaseUrl && { baseUrl: ollamaBaseUrl }
+      });
     }
-    const message = `Unsupported embedding source: ${source || "(empty)"}. Use "huggingface" or an Ollama URL.`;
-    log2(message);
-    throw new Error(message);
+    throw new Error(
+      `Unsupported embedding source: ${source || "(empty)"}. Use "huggingface" or an Ollama URL.`
+    );
   }
   /**
-   * Returns the Ollama base URL if source is an HTTP URL, undefined if source is "ollama" (use default),
-   * or null if source is not an Ollama provider at all.
+   * For embedding providers: returns the URL string, undefined (use Ollama default), or null (not Ollama).
    */
-  resolveOllamaBaseUrl(source) {
+  resolveOllamaEmbeddingBaseUrl(source) {
     if (/^https?:\/\//i.test(source)) return source;
     if (source.toLowerCase() === "ollama") return void 0;
     return null;
+  }
+  /**
+   * For chat completions: extracts host from an HTTP URL, or falls back to localhost.
+   */
+  resolveOllamaChatBaseUrl(source) {
+    if (/^https?:\/\//i.test(source)) {
+      const url = new URL(source);
+      return `${url.protocol}//${url.host}`;
+    }
+    return "http://localhost:11434";
   }
 };
 
@@ -1073,11 +1103,11 @@ var RepositoryInitializer = class {
     console.log(`[DryScan] Computing embeddings for ${total} units...`);
     const updated = [];
     const progressInterval = Math.max(1, Math.ceil(total / 10));
-    const embeddingService = new EmbeddingService(this.deps.repoPath);
+    const connector = new ModelConnector(this.deps.repoPath);
     for (let i = 0; i < total; i++) {
       const unit = allUnits[i];
       try {
-        const enriched = await embeddingService.addEmbedding(unit);
+        const enriched = await connector.embed(unit);
         updated.push(enriched);
       } catch (err) {
         console.error(
@@ -1183,7 +1213,7 @@ async function updateFileTracking(changeSet, repoPath, extractor, db) {
 }
 async function performIncrementalUpdate(repoPath, extractor, db) {
   log3("Starting incremental update");
-  const embeddingService = new EmbeddingService(repoPath);
+  const connector = new ModelConnector(repoPath);
   const changeSet = await detectFileChanges(repoPath, extractor, db);
   if (changeSet.changed.length === 0 && changeSet.added.length === 0 && changeSet.deleted.length === 0) {
     log3("No changes detected. Index is up to date.");
@@ -1208,7 +1238,7 @@ async function performIncrementalUpdate(repoPath, extractor, db) {
       for (let i = 0; i < total; i++) {
         const unit = newUnits[i];
         try {
-          const enriched = await embeddingService.addEmbedding(unit);
+          const enriched = await connector.embed(unit);
           updatedWithEmbeddings.push(enriched);
         } catch (err) {
           console.error(
@@ -1645,13 +1675,14 @@ import fs7 from "fs/promises";
 import path5 from "path";
 import debug7 from "debug";
 var log7 = debug7("DryScan:LLMFalsePositiveDetector");
-var LLM_MODEL = "qwen-duplication-2b:latest";
 var CONCURRENCY_LIMIT = 20;
 var LLMFalsePositiveDetector = class {
   constructor(repoPath, db) {
     this.repoPath = repoPath;
     this.db = db;
+    this.connector = new ModelConnector(repoPath);
   }
+  connector;
   /**
    * Classifies `candidates` as true positives or false positives.
    *
@@ -1720,43 +1751,15 @@ var LLMFalsePositiveDetector = class {
   }
   async classifyPair(group) {
     try {
-      const config = await configStore.get(this.repoPath);
-      const ollamaBaseUrl = this.resolveOllamaBaseUrl(config.embeddingSource);
       const prompt = await this.buildPrompt(group);
-      const response = await fetch(`${ollamaBaseUrl}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: LLM_MODEL,
-          messages: [{ role: "user", content: prompt }],
-          stream: false,
-          options: { temperature: 0, num_predict: 32 }
-        })
-      });
-      if (!response.ok) {
-        log7("LLM request failed for pair %s: HTTP %d \u2014 defaulting to true positive", this.pairKey(group), response.status);
-        return { group, verdict: "yes" };
-      }
-      const data = await response.json();
-      const raw = data.message?.content?.trim().toLowerCase() ?? "";
-      const verdict = raw.startsWith("yes") ? "yes" : "no";
+      const raw = await this.connector.chat(prompt);
+      const verdict = raw.toLowerCase().startsWith("yes") ? "yes" : "no";
       log7("Pair %s \u2192 %s (raw: %s)", this.pairKey(group), verdict, raw);
       return { group, verdict };
     } catch (err) {
       log7("LLM classification error for pair %s: %s \u2014 defaulting to true positive", this.pairKey(group), err.message);
       return { group, verdict: "yes" };
     }
-  }
-  /**
-   * Extracts the Ollama base URL from the configured embeddingSource.
-   * Falls back to http://localhost:11434 for non-URL values (e.g. "ollama", "huggingface").
-   */
-  resolveOllamaBaseUrl(embeddingSource) {
-    if (/^https?:\/\//i.test(embeddingSource)) {
-      const url = new URL(embeddingSource);
-      return `${url.protocol}//${url.host}`;
-    }
-    return "http://localhost:11434";
   }
   /**
    * Builds the inference prompt matching the training format documented in
