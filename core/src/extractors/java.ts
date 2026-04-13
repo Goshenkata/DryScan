@@ -1,12 +1,15 @@
 import crypto from "node:crypto";
 import Parser from "tree-sitter";
 import Java from "tree-sitter-java";
+import debug from "debug";
 import { LanguageExtractor } from "./LanguageExtractor";
 import { IndexUnit, IndexUnitType } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { DryConfig } from "../types";
 import { configStore } from "../config/configStore";
 import { BLOCK_HASH_ALGO } from "../const";
+
+const log = debug("DryScan:JavaExtractor");
 
 export class JavaExtractor implements LanguageExtractor {
   readonly id = "java";
@@ -32,7 +35,13 @@ export class JavaExtractor implements LanguageExtractor {
 
     this.config = await configStore.get(this.repoPath);
 
-    const tree = this.parser.parse(source);
+    let tree: Parser.Tree;
+    try {
+      tree = this.parser.parse(source);
+    } catch (err) {
+      log("Skipping %s: tree-sitter parse failed (%s)", fileRelPath, (err as Error).message);
+      return [];
+    }
     const units: IndexUnit[] = [];
 
     const visit = (node: Parser.SyntaxNode, currentClass?: IndexUnit) => {

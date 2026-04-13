@@ -19,13 +19,14 @@ import path2 from "path";
 import fs3 from "fs/promises";
 import upath4 from "upath";
 import crypto2 from "crypto";
-import debug from "debug";
+import debug2 from "debug";
 import { glob as glob2 } from "glob-gitignore";
 
 // src/extractors/java.ts
 import crypto from "crypto";
 import Parser from "tree-sitter";
 import Java from "tree-sitter-java";
+import debug from "debug";
 
 // src/config/indexConfig.ts
 var indexConfig = {
@@ -187,6 +188,7 @@ var ConfigStore = class {
 var configStore = new ConfigStore();
 
 // src/extractors/java.ts
+var log = debug("DryScan:JavaExtractor");
 var JavaExtractor = class {
   id = "java";
   exts = [".java"];
@@ -205,7 +207,13 @@ var JavaExtractor = class {
   async extractFromText(fileRelPath, source) {
     if (!source.trim()) return [];
     this.config = await configStore.get(this.repoPath);
-    const tree = this.parser.parse(source);
+    let tree;
+    try {
+      tree = this.parser.parse(source);
+    } catch (err) {
+      log("Skipping %s: tree-sitter parse failed (%s)", fileRelPath, err.message);
+      return [];
+    }
     const units = [];
     const visit = (node, currentClass) => {
       if (this.isClassNode(node)) {
@@ -557,7 +565,7 @@ var Gitignore = class {
 };
 
 // src/IndexUnitExtractor.ts
-var log = debug("DryScan:Extractor");
+var log2 = debug2("DryScan:Extractor");
 function defaultExtractors(repoPath) {
   return [new JavaExtractor(repoPath)];
 }
@@ -569,7 +577,7 @@ var IndexUnitExtractor = class {
     this.root = rootPath;
     this.extractors = extractors ?? defaultExtractors(rootPath);
     this.gitignore = new Gitignore(this.root);
-    log("Initialized extractor for %s", this.root);
+    log2("Initialized extractor for %s", this.root);
   }
   /**
    * Lists all supported source files from a path. Honors exclusion globs from config.
@@ -603,7 +611,7 @@ var IndexUnitExtractor = class {
       throw new Error(`Path not found: ${fullPath}`);
     }
     if (stat.isDirectory()) {
-      log("Scanning directory %s", fullPath);
+      log2("Scanning directory %s", fullPath);
       return this.scanDirectory(fullPath);
     }
     return this.scanFile(fullPath);
@@ -642,12 +650,12 @@ var IndexUnitExtractor = class {
     }
     const rel = this.relPath(filePath);
     if (await this.shouldExclude(rel)) {
-      log("Skipping excluded file %s", rel);
+      log2("Skipping excluded file %s", rel);
       return [];
     }
     const source = await fs3.readFile(filePath, "utf8");
     const units = await extractor.extractFromText(rel, source);
-    log("Extracted %d units from %s", units.length, rel);
+    log2("Extracted %d units from %s", units.length, rel);
     return units.map((unit) => ({
       ...unit,
       filePath: rel,
@@ -686,7 +694,7 @@ var IndexUnitExtractor = class {
       throw new Error(`Path not found: ${fullPath}`);
     }
     const baseRel = this.relPath(fullPath);
-    log("Listing source files under %s", fullPath);
+    log2("Listing source files under %s", fullPath);
     return { fullPath, baseRel, stat };
   }
   async filterSingleFile(baseRel, ignoreMatcher) {
@@ -972,10 +980,10 @@ import path3 from "path";
 import fs5 from "fs/promises";
 
 // src/services/ModelConnector.ts
-import debug2 from "debug";
+import debug3 from "debug";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
-var log2 = debug2("DryScan:ModelConnector");
+var log3 = debug3("DryScan:ModelConnector");
 var OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:0.6b";
 var HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
 var OLLAMA_CHAT_MODEL = "qwen3.5-2b-q4km:latest";
@@ -992,7 +1000,7 @@ var ModelConnector = class {
     const config = await configStore.get(this.repoPath);
     const maxContext = config?.contextLength ?? 2048;
     if (unit.code.length > maxContext) {
-      log2("Skipping embedding for %s (code %d > context %d)", unit.id, unit.code.length, maxContext);
+      log3("Skipping embedding for %s (code %d > context %d)", unit.id, unit.code.length, maxContext);
       return { ...unit, embedding: null };
     }
     const source = config.embeddingSource;
@@ -1013,7 +1021,7 @@ var ModelConnector = class {
   async chat(prompt) {
     const config = await configStore.get(this.repoPath);
     const baseUrl = this.resolveOllamaChatBaseUrl(config.embeddingSource);
-    log2("Sending chat request to %s using model %s", baseUrl, OLLAMA_CHAT_MODEL);
+    log3("Sending chat request to %s using model %s", baseUrl, OLLAMA_CHAT_MODEL);
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1033,7 +1041,7 @@ var ModelConnector = class {
   // ── Private helpers ────────────────────────────────────────────────────────
   buildEmbeddingProvider(source) {
     if (source.toLowerCase() === "huggingface") {
-      log2("Using HuggingFace Inference with model: %s", HUGGINGFACE_EMBEDDING_MODEL);
+      log3("Using HuggingFace Inference with model: %s", HUGGINGFACE_EMBEDDING_MODEL);
       return new HuggingFaceInferenceEmbeddings({
         model: HUGGINGFACE_EMBEDDING_MODEL,
         provider: "hf-inference"
@@ -1041,7 +1049,7 @@ var ModelConnector = class {
     }
     const ollamaBaseUrl = this.resolveOllamaEmbeddingBaseUrl(source);
     if (ollamaBaseUrl !== null) {
-      log2("Using Ollama%s with model: %s", ollamaBaseUrl ? ` at ${ollamaBaseUrl}` : "", OLLAMA_EMBEDDING_MODEL);
+      log3("Using Ollama%s with model: %s", ollamaBaseUrl ? ` at ${ollamaBaseUrl}` : "", OLLAMA_EMBEDDING_MODEL);
       return new OllamaEmbeddings({
         model: OLLAMA_EMBEDDING_MODEL,
         ...ollamaBaseUrl && { baseUrl: ollamaBaseUrl }
@@ -1142,13 +1150,13 @@ var RepositoryInitializer = class {
 };
 
 // src/services/UpdateService.ts
-import debug4 from "debug";
+import debug5 from "debug";
 
 // src/DryScanUpdater.ts
 import path4 from "path";
 import fs6 from "fs/promises";
-import debug3 from "debug";
-var log3 = debug3("DryScan:Updater");
+import debug4 from "debug";
+var log4 = debug4("DryScan:Updater");
 async function detectFileChanges(repoPath, extractor, db) {
   const currentFiles = await extractor.listSourceFiles(repoPath);
   const currentFileSet = new Set(currentFiles);
@@ -1212,27 +1220,27 @@ async function updateFileTracking(changeSet, repoPath, extractor, db) {
   }
 }
 async function performIncrementalUpdate(repoPath, extractor, db) {
-  log3("Starting incremental update");
+  log4("Starting incremental update");
   const connector = new ModelConnector(repoPath);
   const changeSet = await detectFileChanges(repoPath, extractor, db);
   if (changeSet.changed.length === 0 && changeSet.added.length === 0 && changeSet.deleted.length === 0) {
-    log3("No changes detected. Index is up to date.");
+    log4("No changes detected. Index is up to date.");
     return changeSet;
   }
-  log3(`Changes detected: ${changeSet.added.length} added, ${changeSet.changed.length} changed, ${changeSet.deleted.length} deleted`);
+  log4(`Changes detected: ${changeSet.added.length} added, ${changeSet.changed.length} changed, ${changeSet.deleted.length} deleted`);
   const filesToRemove = [...changeSet.changed, ...changeSet.deleted];
   if (filesToRemove.length > 0) {
     await db.removeUnitsByFilePaths(filesToRemove);
-    log3(`Removed units from ${filesToRemove.length} files`);
+    log4(`Removed units from ${filesToRemove.length} files`);
   }
   const filesToProcess = [...changeSet.added, ...changeSet.changed];
   if (filesToProcess.length > 0) {
     const newUnits = await extractUnitsFromFiles(filesToProcess, extractor);
     await db.saveUnits(newUnits);
-    log3(`Extracted and saved ${newUnits.length} units from ${filesToProcess.length} files`);
+    log4(`Extracted and saved ${newUnits.length} units from ${filesToProcess.length} files`);
     const total = newUnits.length;
     if (total > 0) {
-      log3(`Recomputing embeddings for ${total} units`);
+      log4(`Recomputing embeddings for ${total} units`);
       const progressInterval = Math.max(1, Math.ceil(total / 10));
       const updatedWithEmbeddings = [];
       for (let i = 0; i < total; i++) {
@@ -1253,16 +1261,16 @@ async function performIncrementalUpdate(repoPath, extractor, db) {
         }
       }
       await db.updateUnits(updatedWithEmbeddings);
-      log3(`Recomputed embeddings for ${updatedWithEmbeddings.length} units`);
+      log4(`Recomputed embeddings for ${updatedWithEmbeddings.length} units`);
     }
   }
   await updateFileTracking(changeSet, repoPath, extractor, db);
-  log3("Incremental update complete");
+  log4("Incremental update complete");
   return changeSet;
 }
 
 // src/services/UpdateService.ts
-var log4 = debug4("DryScan:UpdateService");
+var log5 = debug5("DryScan:UpdateService");
 var UpdateService = class {
   constructor(deps, exclusionService) {
     this.deps = deps;
@@ -1277,7 +1285,7 @@ var UpdateService = class {
       const dirtyPaths = [...changeSet.changed, ...changeSet.deleted, ...changeSet.added];
       return dirtyPaths;
     } catch (err) {
-      log4("Error during index update:", err);
+      log5("Error during index update:", err);
       throw err;
     }
   }
@@ -1369,9 +1377,9 @@ var ExclusionService = class {
 
 // src/services/PairingService.ts
 import crypto3 from "crypto";
-import debug5 from "debug";
+import debug6 from "debug";
 import { minimatch as minimatch2 } from "minimatch";
-var log5 = debug5("DryScan:pairs");
+var log6 = debug6("DryScan:pairs");
 var PairingService = class {
   constructor(indexUnitExtractor) {
     this.indexUnitExtractor = indexUnitExtractor;
@@ -1382,7 +1390,7 @@ var PairingService = class {
    */
   pairKeyForUnits(left, right) {
     if (left.unitType !== right.unitType) {
-      log5("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
+      log6("Skipping pair with mismatched types: %s vs %s", left.unitType, right.unitType);
       return null;
     }
     const type = left.unitType;
@@ -1398,13 +1406,13 @@ var PairingService = class {
   parsePairKey(value) {
     const parts = value.split("|");
     if (parts.length !== 3) {
-      log5("Invalid pair key format: %s", value);
+      log6("Invalid pair key format: %s", value);
       return null;
     }
     const [typeRaw, leftRaw, rightRaw] = parts;
     const type = this.stringToUnitType(typeRaw);
     if (!type) {
-      log5("Unknown unit type in pair key: %s", typeRaw);
+      log6("Unknown unit type in pair key: %s", typeRaw);
       return null;
     }
     const [left, right] = [leftRaw, rightRaw].sort();
@@ -1478,12 +1486,12 @@ var PairingService = class {
 import { existsSync } from "fs";
 
 // src/services/DuplicateService.ts
-import debug8 from "debug";
+import debug9 from "debug";
 import shortUuid from "short-uuid";
 
 // src/services/DuplicationCache.ts
-import debug6 from "debug";
-var log6 = debug6("DryScan:DuplicationCache");
+import debug7 from "debug";
+var log7 = debug7("DryScan:DuplicationCache");
 var DuplicationCache = class _DuplicationCache {
   static instance = null;
   comparisons = /* @__PURE__ */ new Map();
@@ -1600,7 +1608,7 @@ var DuplicationCache = class _DuplicationCache {
     if (!canIncremental) {
       const { data } = await similarityApi.parallelCosineSimilarityFlat(embeddings, embeddings, "float32");
       this.embSimByType.set(unitType, { size: n, index: newIndex, matrix: data });
-      log6("Built embedding similarity matrix for %s: %d units", unitType, embedded.length);
+      log7("Built embedding similarity matrix for %s: %d units", unitType, embedded.length);
       return;
     }
     const priorIndex = prior.index;
@@ -1614,12 +1622,12 @@ var DuplicationCache = class _DuplicationCache {
     if (!indicesStable) {
       const { data } = await similarityApi.parallelCosineSimilarityFlat(embeddings, embeddings, "float32");
       this.embSimByType.set(unitType, { size: n, index: newIndex, matrix: data });
-      log6("Rebuilt embedding similarity matrix for %s (index changed): %d units", unitType, embedded.length);
+      log7("Rebuilt embedding similarity matrix for %s (index changed): %d units", unitType, embedded.length);
       return;
     }
     const dirtyIds = new Set(embedded.filter((u) => dirtySet.has(u.filePath)).map((u) => u.id));
     if (dirtyIds.size === 0) {
-      log6("Matrix reused for %s: no dirty units detected", unitType);
+      log7("Matrix reused for %s: no dirty units detected", unitType);
       return;
     }
     const dirtyIndices = embedded.reduce((acc, u, i) => dirtyIds.has(u.id) ? [...acc, i] : acc, []);
@@ -1636,7 +1644,7 @@ var DuplicationCache = class _DuplicationCache {
       }
     });
     this.embSimByType.set(unitType, { size: n, index: newIndex, matrix });
-    log6("Incremental matrix update for %s: %d dirty unit(s) out of %d total", unitType, dirtyIds.size, n);
+    log7("Incremental matrix update for %s: %d dirty unit(s) out of %d total", unitType, dirtyIds.size, n);
   }
   /** Returns the pre-computed cosine similarity for a pair of unit IDs, if available. */
   getEmbSim(id1, id2) {
@@ -1673,8 +1681,8 @@ var DuplicationCache = class _DuplicationCache {
 // src/services/LLMFalsePositiveDetector.ts
 import fs7 from "fs/promises";
 import path5 from "path";
-import debug7 from "debug";
-var log7 = debug7("DryScan:LLMFalsePositiveDetector");
+import debug8 from "debug";
+var log8 = debug8("DryScan:LLMFalsePositiveDetector");
 var CONCURRENCY_LIMIT = 20;
 var LLMFalsePositiveDetector = class {
   constructor(repoPath, db) {
@@ -1702,7 +1710,7 @@ var LLMFalsePositiveDetector = class {
       if (dirtySet.has(g.left.filePath) || dirtySet.has(g.right.filePath)) return true;
       return !verdictMap.has(this.pairKey(g));
     });
-    log7(
+    log8(
       "%d candidates: %d from cache, %d need classification",
       candidates.length,
       candidates.length - toClassify.length,
@@ -1733,7 +1741,7 @@ var LLMFalsePositiveDetector = class {
         truePositives.push(group);
       }
     }
-    log7("%d true positives, %d false positives", truePositives.length, falsePositives.length);
+    log8("%d true positives, %d false positives", truePositives.length, falsePositives.length);
     return { truePositives, falsePositives };
   }
   /** Stable, order-independent pair key matching DuplicateService.groupKey. */
@@ -1754,10 +1762,10 @@ var LLMFalsePositiveDetector = class {
       const prompt = await this.buildPrompt(group);
       const raw = await this.connector.chat(prompt);
       const verdict = raw.toLowerCase().startsWith("yes") ? "yes" : "no";
-      log7("Pair %s \u2192 %s (raw: %s)", this.pairKey(group), verdict, raw);
+      log8("Pair %s \u2192 %s (raw: %s)", this.pairKey(group), verdict, raw);
       return { group, verdict };
     } catch (err) {
-      log7("LLM classification error for pair %s: %s \u2014 defaulting to true positive", this.pairKey(group), err.message);
+      log8("LLM classification error for pair %s: %s \u2014 defaulting to true positive", this.pairKey(group), err.message);
       return { group, verdict: "yes" };
     }
   }
@@ -1831,7 +1839,7 @@ var LLMFalsePositiveDetector = class {
 };
 
 // src/services/DuplicateService.ts
-var log8 = debug8("DryScan:DuplicateService");
+var log9 = debug9("DryScan:DuplicateService");
 var DuplicateService = class {
   constructor(deps) {
     this.deps = deps;
@@ -1842,7 +1850,7 @@ var DuplicateService = class {
     this.config = config;
     const t0 = performance.now();
     const allUnits = await this.deps.db.getAllUnits();
-    log8("Starting duplicate analysis on %d units", allUnits.length);
+    log9("Starting duplicate analysis on %d units", allUnits.length);
     this.duplicationCache.clearRunCaches();
     await this.duplicationCache.buildEmbSimCache(allUnits, dirtyPaths);
     if (allUnits.length < 2) {
@@ -1859,7 +1867,7 @@ var DuplicateService = class {
     );
     const merged = this.mergeDuplicates(reusableClean, recomputed);
     const filtered = merged.filter((g) => !this.isGroupExcluded(g));
-    log8(
+    log9(
       "Found %d duplicate groups (%d excluded, %d reused)",
       filtered.length,
       merged.length - filtered.length,
@@ -1868,24 +1876,24 @@ var DuplicateService = class {
     if (config.enableLLMFilter) {
       if (dirtyPaths.length > 0) {
         void this.deps.db.removeLLMVerdictsByFilePaths(dirtyPaths).catch((err) => {
-          log8("Failed to evict stale LLM verdicts: %s", err.message);
+          log9("Failed to evict stale LLM verdicts: %s", err.message);
         });
       }
       const detector = new LLMFalsePositiveDetector(this.deps.repoPath, this.deps.db);
       const llmStart = performance.now();
       const decision = await detector.classify(filtered, dirtyPaths);
       const llmMs = performance.now() - llmStart;
-      log8(
+      log9(
         "LLM filter: %d true positives, %d false positives",
         decision.truePositives.length,
         decision.falsePositives.length
       );
       const score2 = this.computeDuplicationScore(decision.truePositives, allUnits);
-      log8("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+      log9("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
       return this.buildResult(decision.truePositives, score2, allUnits, filtered.length, Math.round(llmMs));
     }
     const score = this.computeDuplicationScore(filtered, allUnits);
-    log8("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
+    log9("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
     return this.buildResult(filtered, score, allUnits, filtered.length, 0);
   }
   buildResult(duplicates, score, allUnits, pairsBeforeLLM, llmFilterMs) {
@@ -1912,14 +1920,14 @@ var DuplicateService = class {
   }
   computeDuplicates(units, thresholds, dirtySet) {
     if (dirtySet && dirtySet.size === 0) {
-      log8("Skipping recomputation: no dirty files and previous report threshold matches");
+      log9("Skipping recomputation: no dirty files and previous report threshold matches");
       return [];
     }
     const duplicates = [];
     const t0 = performance.now();
     for (const [type, typedUnits] of this.groupByType(units)) {
       const threshold = this.getThreshold(type, thresholds);
-      log8("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
+      log9("Comparing %d %s units (threshold=%.3f)", typedUnits.length, type, threshold);
       for (let i = 0; i < typedUnits.length; i++) {
         for (let j = i + 1; j < typedUnits.length; j++) {
           const left = typedUnits[i];
@@ -1944,7 +1952,7 @@ var DuplicateService = class {
         }
       }
     }
-    log8("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
+    log9("computeDuplicates: %d duplicates in %dms", duplicates.length, (performance.now() - t0).toFixed(2));
     return duplicates.sort((a, b) => b.similarity - a.similarity);
   }
   reuseCleanPairsFromPreviousReport(report, units, dirtySet) {
@@ -1955,7 +1963,7 @@ var DuplicateService = class {
       if (leftDirty || rightDirty) return false;
       return unitIds.has(group.left.id) && unitIds.has(group.right.id);
     });
-    log8("Reused %d clean-clean duplicate groups from previous report", reusable.length);
+    log9("Reused %d clean-clean duplicate groups from previous report", reusable.length);
     return reusable;
   }
   mergeDuplicates(reused, recomputed) {

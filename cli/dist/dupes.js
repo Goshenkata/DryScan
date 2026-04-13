@@ -56,9 +56,11 @@ export async function handleDupesCommand(path, options) {
     await configStore.init(repoPath);
     // For machine-readable output, keep stdout clean by sending internal logs to stderr.
     const originalLog = console.log;
+    const originalDebug = console.debug;
     const machineReadableOutput = Boolean(options.html || options.json);
     if (machineReadableOutput) {
         console.log = console.error;
+        console.debug = console.error;
     }
     try {
         // Override LLM filter for this run only (mutates cached config; safe for single-run CLI)
@@ -97,9 +99,9 @@ export async function handleDupesCommand(path, options) {
         }
     }
     finally {
-        // Restore original console.log
         if (machineReadableOutput) {
             console.log = originalLog;
+            console.debug = originalDebug;
         }
     }
 }

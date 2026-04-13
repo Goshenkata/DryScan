@@ -77,9 +77,11 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
   
   // For machine-readable output, keep stdout clean by sending internal logs to stderr.
   const originalLog = console.log;
+  const originalDebug = console.debug;
   const machineReadableOutput = Boolean(options.html || options.json);
   if (machineReadableOutput) {
     console.log = console.error;
+    console.debug = console.error;
   }
   
   try {
@@ -121,9 +123,9 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
       formatDuplicates(report);
     }
   } finally {
-    // Restore original console.log
     if (machineReadableOutput) {
       console.log = originalLog;
+      console.debug = originalDebug;
     }
   }
 }
