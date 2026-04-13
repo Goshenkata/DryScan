@@ -1,7 +1,7 @@
 import debug from "debug";
 import shortUuid from "short-uuid";
 import { DryScanServiceDeps } from "./types";
-import { DuplicateAnalysisResult, DuplicateGroup, DuplicateReport, DuplicationScore, IndexUnit, IndexUnitType } from "../types";
+import { DuplicateAnalysisResult, DuplicateGroup, DuplicateReport, DuplicateServiceMetrics, DuplicationScore, IndexUnit, IndexUnitType, ScanMetrics } from "../types";
 import { indexConfig } from "../config/indexConfig";
 import { DryConfig } from "../types";
 import { DuplicationCache } from "./DuplicationCache";
@@ -69,7 +69,9 @@ export class DuplicateService {
         });
       }
       const detector = new LLMFalsePositiveDetector(this.deps.repoPath, this.deps.db);
+      const llmStart = performance.now();
       const decision = await detector.classify(filtered, dirtyPaths);
+      const llmMs = performance.now() - llmStart;
       log(
         "LLM filter: %d true positives, %d false positives",
         decision.truePositives.length,
@@ -77,12 +79,31 @@ export class DuplicateService {
       );
       const score = this.computeDuplicationScore(decision.truePositives, allUnits);
       log("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
-      return { duplicates: decision.truePositives, score };
+      return this.buildResult(decision.truePositives, score, allUnits, filtered.length, Math.round(llmMs));
     }
 
     const score = this.computeDuplicationScore(filtered, allUnits);
     log("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
-    return { duplicates: filtered, score };
+    return this.buildResult(filtered, score, allUnits, filtered.length, 0);
+  }
+
+  private buildResult(
+    duplicates: DuplicateGroup[],
+    score: DuplicationScore,
+    allUnits: IndexUnit[],
+    pairsBeforeLLM: number,
+    llmFilterMs: number,
+  ): DuplicateAnalysisResult {
+    return {
+      duplicates,
+      score,
+      metrics: {
+        unitCounts: this.countUnitsByType(allUnits),
+        pairsBeforeLLM,
+        pairsAfterLLM: duplicates.length,
+        llmFilterMs,
+      },
+    };
   }
 
   private resolveThresholds(functionThreshold?: number): { function: number; block: number; class: number } {
@@ -335,5 +356,15 @@ export class DuplicateService {
     if (score < 30) return "Fair";
     if (score < 50) return "Poor";
     return "Critical";
+  }
+
+  private countUnitsByType(units: IndexUnit[]): ScanMetrics["unitCounts"] {
+    let classes = 0, functions = 0, blocks = 0;
+    for (const u of units) {
+      if (u.unitType === IndexUnitType.CLASS) classes++;
+      else if (u.unitType === IndexUnitType.FUNCTION) functions++;
+      else if (u.unitType === IndexUnitType.BLOCK) blocks++;
+    }
+    return { classes, functions, blocks, total: units.length };
   }
 }

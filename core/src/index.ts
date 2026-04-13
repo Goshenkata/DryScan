@@ -6,4 +6,5 @@ export {
 	DuplicationScore,
 	DuplicateReport,
 	DryConfig,
+	ScanMetrics,
 } from './types';

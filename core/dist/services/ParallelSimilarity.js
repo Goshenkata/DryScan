@@ -2,7 +2,7 @@ import {
   parallelCosineSimilarity,
   parallelCosineSimilarityFlat,
   similarityApi
-} from "../chunk-SK4GNQXH.js";
+} from "../chunk-23WZ5D5H.js";
 export {
   parallelCosineSimilarity,
   parallelCosineSimilarityFlat,

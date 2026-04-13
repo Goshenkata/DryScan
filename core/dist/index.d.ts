@@ -25,6 +25,8 @@ interface DuplicateReport {
     grade: DuplicationScore["grade"];
     score: DuplicationScore;
     duplicates: DuplicateGroup[];
+    /** Scan metrics populated during duplicate analysis. */
+    metrics?: ScanMetrics;
 }
 interface DuplicateSide {
     id: string;
@@ -58,6 +60,31 @@ interface IndexUnit {
     parent?: IndexUnit | null;
     children?: IndexUnit[];
     embedding?: number[] | null;
+}
+/** Metrics collected during a full scan, used for experiment evaluation. */
+interface ScanMetrics {
+    /** Number of source files scanned. */
+    filesScanned: number;
+    /** Total lines of code across all source files. */
+    totalLinesOfCode: number;
+    /** Extracted units broken down by type. */
+    unitCounts: {
+        classes: number;
+        functions: number;
+        blocks: number;
+        total: number;
+    };
+    /** Duplicate pairs found before LLM filtering. */
+    pairsBeforeLLM: number;
+    /** Duplicate pairs remaining after LLM filtering (or same as before if LLM disabled). */
+    pairsAfterLLM: number;
+    /** Phase timings in milliseconds. */
+    timings: {
+        indexUpdateMs: number;
+        duplicateDetectionMs: number;
+        llmFilterMs: number;
+        totalMs: number;
+    };
 }
 
 interface LanguageExtractor {
@@ -293,4 +320,4 @@ declare class ConfigStore {
 }
 declare const configStore: ConfigStore;
 
-export { type DryConfig, DryScan, type DuplicateGroup, type DuplicateReport, type DuplicationScore, configStore };
+export { type DryConfig, DryScan, type DuplicateGroup, type DuplicateReport, type DuplicationScore, type ScanMetrics, configStore };

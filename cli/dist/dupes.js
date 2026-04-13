@@ -61,6 +61,11 @@ export async function handleDupesCommand(path, options) {
         console.log = console.error;
     }
     try {
+        // Override LLM filter for this run only (mutates cached config; safe for single-run CLI)
+        if (options.llm === false) {
+            const config = await configStore.get(repoPath);
+            config.enableLLMFilter = false;
+        }
         const scanner = new DryScan(repoPath);
         const report = await scanner.buildDuplicateReport();
         if (options.ui) {

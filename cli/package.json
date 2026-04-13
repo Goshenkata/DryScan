@@ -8,8 +8,8 @@
     "dryscan": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/cli.js && mkdir -p dist/templates && cp src/templates/report.hbs dist/templates/report.hbs",
-    "clean": "rm -rf dist",
+    "build": "tsc && node -e \"fs=require('fs');fs.mkdirSync('dist/templates',{recursive:true});fs.copyFileSync('src/templates/report.hbs','dist/templates/report.hbs')\"",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "test": "npm run test:unit && npm run test:bats",
     "test:unit": "tsx ../node_modules/mocha/bin/mocha \"test/**/*.test.mjs\"",
     "test:bats": "npm run build && bats --print-output-on-failure test/dryscan-cli.bats",

@@ -1,6 +1,6 @@
 import upath from "upath";
 import fs from "fs/promises";
-import { DuplicateAnalysisResult, DuplicateReport } from "./types";
+import { DuplicateAnalysisResult, DuplicateReport, ScanMetrics } from "./types";
 import { DRYSCAN_DIR, INDEX_DB, REPORTS_DIR } from "./const";
 import { defaultExtractors, IndexUnitExtractor } from "./IndexUnitExtractor";
 import { DryScanDatabase } from "./db/DryScanDatabase";
@@ -106,14 +106,35 @@ export class DryScan {
    */
   async buildDuplicateReport(): Promise<DuplicateReport> {
     const config = await this.loadConfig();
-    const analysis = await this.findDuplicates(config);
-    const report = {
+    const { analysis, timings } = await this.findDuplicates(config);
+
+    const m = analysis.metrics;
+    const metrics: ScanMetrics | undefined = m
+      ? {
+          filesScanned: m.unitCounts.total > 0
+            ? (await this.extractor.listSourceFiles(this.repoPath)).length
+            : 0,
+          totalLinesOfCode: analysis.score.totalLines,
+          unitCounts: m.unitCounts,
+          pairsBeforeLLM: m.pairsBeforeLLM,
+          pairsAfterLLM: m.pairsAfterLLM,
+          timings: {
+            indexUpdateMs: timings.indexUpdateMs,
+            duplicateDetectionMs: timings.dupDetectionMs - m.llmFilterMs,
+            llmFilterMs: m.llmFilterMs,
+            totalMs: timings.totalMs,
+          },
+        }
+      : undefined;
+
+    const report: DuplicateReport = {
       version: 1,
       generatedAt: new Date().toISOString(),
       threshold: config.threshold,
       grade: analysis.score.grade,
       score: analysis.score,
       duplicates: analysis.duplicates,
+      ...(metrics && { metrics }),
     };
     await this.saveReport(report);
     return report;
@@ -126,15 +147,19 @@ export class DryScan {
    *
    * @returns Analysis result with duplicate groups and duplication score
    */
-  private async findDuplicates(config: DryConfig): Promise<DuplicateAnalysisResult> {
+  private async findDuplicates(config: DryConfig): Promise<{
+    analysis: DuplicateAnalysisResult;
+    timings: { indexUpdateMs: number; dupDetectionMs: number; totalMs: number };
+  }> {
+    const totalStart = Date.now();
     console.log(`[DryScan] Finding duplicates (threshold: ${config.threshold})...`);
     await this.ensureDatabase();
 
     console.log("[DryScan] Updating index...");
     const updateStart = Date.now();
     const dirtyPaths = await this.updateIndex();
-    const updateDuration = Date.now() - updateStart;
-    console.log(`[DryScan] Index update  took ${updateDuration}ms.`);
+    const indexUpdateMs = Date.now() - updateStart;
+    console.log(`[DryScan] Index update  took ${indexUpdateMs}ms.`);
 
     const previousReport = await this.loadLatestReport();
     if (previousReport?.threshold === config.threshold) {
@@ -143,11 +168,12 @@ export class DryScan {
 
     console.log("[DryScan] Detecting duplicates...");
     const dupStart = Date.now();
-    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths, previousReport);
-    const dupDuration = Date.now() - dupStart;
-    console.log(`[DryScan] Duplicate detection took ${dupDuration}ms.`);
+    const analysis = await this.services.duplicate.findDuplicates(config, dirtyPaths, previousReport);
+    const dupDetectionMs = Date.now() - dupStart;
+    console.log(`[DryScan] Duplicate detection took ${dupDetectionMs}ms.`);
 
-    return result;
+    const totalMs = Date.now() - totalStart;
+    return { analysis, timings: { indexUpdateMs, dupDetectionMs, totalMs } };
   }
 
   /**

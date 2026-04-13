@@ -16,7 +16,7 @@ const HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
  * Fine-tuned duplication classifier served via Ollama.
  * Loaded from qwen-duplication-2b:latest — see ../../../DryScanDiplomna/finetune/TRAINING_FORMAT.md.
  */
-const OLLAMA_CHAT_MODEL = "qwen-duplication-2b:latest";
+const OLLAMA_CHAT_MODEL = "qwen3.5-2b-q4km:latest";
 
 /**
  * Single entry-point for all model I/O: embedding generation and LLM chat completions.

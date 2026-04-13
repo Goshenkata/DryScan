@@ -5,7 +5,7 @@ import { DuplicateReportServer, renderHtmlReport } from './uiServer.js';
 
 const UI_PORT = 3000;
 
-type DupesOptions = { json?: boolean; ui?: boolean; html?: boolean };
+type DupesOptions = { json?: boolean; ui?: boolean; html?: boolean; llm?: boolean };
 
 function formatCodeSnippet(code: string, maxLines: number = 15): string {
   const lines = code.split('\n');
@@ -83,6 +83,12 @@ export async function handleDupesCommand(path: string, options: DupesOptions): P
   }
   
   try {
+    // Override LLM filter for this run only (mutates cached config; safe for single-run CLI)
+    if (options.llm === false) {
+      const config = await configStore.get(repoPath);
+      config.enableLLMFilter = false;
+    }
+
     const scanner = new DryScan(repoPath);
     const report = await scanner.buildDuplicateReport();
 

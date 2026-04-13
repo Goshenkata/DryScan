@@ -1,7 +1,7 @@
 import {
   __decorateClass,
   similarityApi
-} from "./chunk-SK4GNQXH.js";
+} from "./chunk-23WZ5D5H.js";
 
 // src/DryScan.ts
 import upath6 from "upath";
@@ -978,7 +978,7 @@ import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/
 var log2 = debug2("DryScan:ModelConnector");
 var OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:0.6b";
 var HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
-var OLLAMA_CHAT_MODEL = "qwen-duplication-2b:latest";
+var OLLAMA_CHAT_MODEL = "qwen3.5-2b-q4km:latest";
 var ModelConnector = class {
   constructor(repoPath) {
     this.repoPath = repoPath;
@@ -1872,7 +1872,9 @@ var DuplicateService = class {
         });
       }
       const detector = new LLMFalsePositiveDetector(this.deps.repoPath, this.deps.db);
+      const llmStart = performance.now();
       const decision = await detector.classify(filtered, dirtyPaths);
+      const llmMs = performance.now() - llmStart;
       log8(
         "LLM filter: %d true positives, %d false positives",
         decision.truePositives.length,
@@ -1880,11 +1882,23 @@ var DuplicateService = class {
       );
       const score2 = this.computeDuplicationScore(decision.truePositives, allUnits);
       log8("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
-      return { duplicates: decision.truePositives, score: score2 };
+      return this.buildResult(decision.truePositives, score2, allUnits, filtered.length, Math.round(llmMs));
     }
     const score = this.computeDuplicationScore(filtered, allUnits);
     log8("findDuplicates completed in %dms", (performance.now() - t0).toFixed(2));
-    return { duplicates: filtered, score };
+    return this.buildResult(filtered, score, allUnits, filtered.length, 0);
+  }
+  buildResult(duplicates, score, allUnits, pairsBeforeLLM, llmFilterMs) {
+    return {
+      duplicates,
+      score,
+      metrics: {
+        unitCounts: this.countUnitsByType(allUnits),
+        pairsBeforeLLM,
+        pairsAfterLLM: duplicates.length,
+        llmFilterMs
+      }
+    };
   }
   resolveThresholds(functionThreshold) {
     const d = indexConfig.thresholds;
@@ -2084,6 +2098,15 @@ var DuplicateService = class {
     if (score < 50) return "Poor";
     return "Critical";
   }
+  countUnitsByType(units) {
+    let classes = 0, functions = 0, blocks = 0;
+    for (const u of units) {
+      if (u.unitType === "class" /* CLASS */) classes++;
+      else if (u.unitType === "function" /* FUNCTION */) functions++;
+      else if (u.unitType === "block" /* BLOCK */) blocks++;
+    }
+    return { classes, functions, blocks, total: units.length };
+  }
 };
 
 // src/DryScan.ts
@@ -2159,14 +2182,29 @@ var DryScan = class {
    */
   async buildDuplicateReport() {
     const config = await this.loadConfig();
-    const analysis = await this.findDuplicates(config);
+    const { analysis, timings } = await this.findDuplicates(config);
+    const m = analysis.metrics;
+    const metrics = m ? {
+      filesScanned: m.unitCounts.total > 0 ? (await this.extractor.listSourceFiles(this.repoPath)).length : 0,
+      totalLinesOfCode: analysis.score.totalLines,
+      unitCounts: m.unitCounts,
+      pairsBeforeLLM: m.pairsBeforeLLM,
+      pairsAfterLLM: m.pairsAfterLLM,
+      timings: {
+        indexUpdateMs: timings.indexUpdateMs,
+        duplicateDetectionMs: timings.dupDetectionMs - m.llmFilterMs,
+        llmFilterMs: m.llmFilterMs,
+        totalMs: timings.totalMs
+      }
+    } : void 0;
     const report = {
       version: 1,
       generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
       threshold: config.threshold,
       grade: analysis.score.grade,
       score: analysis.score,
-      duplicates: analysis.duplicates
+      duplicates: analysis.duplicates,
+      ...metrics && { metrics }
     };
     await this.saveReport(report);
     return report;
@@ -2179,23 +2217,25 @@ var DryScan = class {
    * @returns Analysis result with duplicate groups and duplication score
    */
   async findDuplicates(config) {
+    const totalStart = Date.now();
     console.log(`[DryScan] Finding duplicates (threshold: ${config.threshold})...`);
     await this.ensureDatabase();
     console.log("[DryScan] Updating index...");
     const updateStart = Date.now();
     const dirtyPaths = await this.updateIndex();
-    const updateDuration = Date.now() - updateStart;
-    console.log(`[DryScan] Index update  took ${updateDuration}ms.`);
+    const indexUpdateMs = Date.now() - updateStart;
+    console.log(`[DryScan] Index update  took ${indexUpdateMs}ms.`);
     const previousReport = await this.loadLatestReport();
     if (previousReport?.threshold === config.threshold) {
       console.log("[DryScan] Reusing clean-clean duplicates from latest report (threshold unchanged).");
     }
     console.log("[DryScan] Detecting duplicates...");
     const dupStart = Date.now();
-    const result = await this.services.duplicate.findDuplicates(config, dirtyPaths, previousReport);
-    const dupDuration = Date.now() - dupStart;
-    console.log(`[DryScan] Duplicate detection took ${dupDuration}ms.`);
-    return result;
+    const analysis = await this.services.duplicate.findDuplicates(config, dirtyPaths, previousReport);
+    const dupDetectionMs = Date.now() - dupStart;
+    console.log(`[DryScan] Duplicate detection took ${dupDetectionMs}ms.`);
+    const totalMs = Date.now() - totalStart;
+    return { analysis, timings: { indexUpdateMs, dupDetectionMs, totalMs } };
   }
   /**
    * Cleans excludedPairs entries that no longer match any indexed units.

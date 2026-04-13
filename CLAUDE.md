@@ -8,6 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies (run from repo root)
 npm install
 
+# Full reinstall (use when native modules break or after switching branches)
+rm -rf node_modules core/node_modules cli/node_modules package-lock.json && npm install
+
 # Build all packages
 npm run build
 
@@ -93,3 +96,9 @@ Uses the `debug` package. Enable with:
 ```bash
 DEBUG=DryScan:* npm run dryscan -- dupes .
 ```
+
+### Windows / Git Bash Notes
+
+- `tree-sitter` is pinned to `~0.21.1` because v0.25.0 dropped prebuilt binaries from the npm package and requires a C++ toolchain (Visual Studio Build Tools) to compile via node-gyp. Version 0.21.1 ships win32-x64 prebuilds that work out of the box.
+- If native modules break, do a full reinstall: `rm -rf node_modules core/node_modules package-lock.json && npm install`
+- The CLI build script uses `node -e` for file copies to stay cross-platform (cmd.exe does not have `chmod` or Unix `cp`).

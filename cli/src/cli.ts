@@ -59,6 +59,7 @@ dupesCommand
   .option('--json', 'Output results as JSON')
   .option('--ui', 'Serve interactive report at http://localhost:3000')
   .option('--html', 'Output HTML report to stdout')
+  .option('--no-llm', 'Disable LLM false-positive filtering')
   .action(handleDupesCommand);
 
 dupesCommand
