@@ -7,7 +7,7 @@ import { configStore } from "../config/configStore";
 const log = debug("DryScan:ModelConnector");
 
 /** Ollama embedding model (vector search). */
-const OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:0.6b";
+const OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:4b";
 
 /** HuggingFace mirror of the same embedding model. */
 const HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
@@ -16,7 +16,7 @@ const HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
  * Fine-tuned duplication classifier served via Ollama.
  * Loaded from qwen-duplication-2b:latest — see ../../../DryScanDiplomna/finetune/TRAINING_FORMAT.md.
  */
-const OLLAMA_CHAT_MODEL = "qwen3.5-2b-q4km:latest";
+const OLLAMA_CHAT_MODEL = process.env.DRYSCAN_CHAT_MODEL ?? "gemma4:e4b";
 
 /**
  * Single entry-point for all model I/O: embedding generation and LLM chat completions.
@@ -71,7 +71,8 @@ export class ModelConnector {
         model: OLLAMA_CHAT_MODEL,
         messages: [{ role: "user", content: prompt }],
         stream: false,
-        options: { temperature: 0, num_predict: 32 },
+        think: false,
+        options: { temperature: 0, num_predict: 4096 },
       }),
     });
 
@@ -80,7 +81,9 @@ export class ModelConnector {
     }
 
     const data = (await response.json()) as { message?: { content?: string } };
-    return data.message?.content?.trim() ?? "";
+    const raw = data.message?.content?.trim() ?? "";
+    const afterThink = raw.includes("</think>") ? raw.split("</think>").pop()!.trim() : raw;
+    return afterThink;
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

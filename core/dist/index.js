@@ -1,7 +1,7 @@
 import {
   __decorateClass,
   similarityApi
-} from "./chunk-23WZ5D5H.js";
+} from "./chunk-SK4GNQXH.js";
 
 // src/DryScan.ts
 import upath6 from "upath";
@@ -984,9 +984,9 @@ import debug3 from "debug";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
 var log3 = debug3("DryScan:ModelConnector");
-var OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:0.6b";
+var OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:4b";
 var HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
-var OLLAMA_CHAT_MODEL = "qwen3.5-2b-q4km:latest";
+var OLLAMA_CHAT_MODEL = process.env.DRYSCAN_CHAT_MODEL ?? "qwen9b-duplication:latest";
 var ModelConnector = class {
   constructor(repoPath) {
     this.repoPath = repoPath;
@@ -1029,14 +1029,17 @@ var ModelConnector = class {
         model: OLLAMA_CHAT_MODEL,
         messages: [{ role: "user", content: prompt }],
         stream: false,
-        options: { temperature: 0, num_predict: 32 }
+        think: false,
+        options: { temperature: 0, num_predict: 4096 }
       })
     });
     if (!response.ok) {
       throw new Error(`Ollama chat request failed: HTTP ${response.status}`);
     }
     const data = await response.json();
-    return data.message?.content?.trim() ?? "";
+    const raw = data.message?.content?.trim() ?? "";
+    const afterThink = raw.includes("</think>") ? raw.split("</think>").pop().trim() : raw;
+    return afterThink;
   }
   // ── Private helpers ────────────────────────────────────────────────────────
   buildEmbeddingProvider(source) {

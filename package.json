@@ -22,8 +22,10 @@
     "dryscan:dev": "npm --workspace @goshenkata/dryscan-cli exec -- tsx src/cli.ts"
   },
   "dependencies": {
+    "@esbuild/linux-x64": "^0.28.0",
     "@goshenkata/dryscan-cli": "workspace:*",
-    "@goshenkata/dryscan-core": "workspace:*"
+    "@goshenkata/dryscan-core": "workspace:*",
+    "@rollup/rollup-linux-x64-gnu": "^4.60.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
