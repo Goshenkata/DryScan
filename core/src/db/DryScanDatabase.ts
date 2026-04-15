@@ -145,7 +145,10 @@ export class DryScanDatabase {
   async saveLLMVerdicts(verdicts: LLMVerdictEntity[]): Promise<void> {
     if (!this.verdictRepository) throw new Error("Database not initialized");
     if (verdicts.length === 0) return;
-    await this.verdictRepository.save(verdicts);
+    const BATCH = 500;
+    for (let i = 0; i < verdicts.length; i += BATCH) {
+      await this.verdictRepository.save(verdicts.slice(i, i + BATCH));
+    }
   }
 
   /**

@@ -953,7 +953,10 @@ var DryScanDatabase = class {
   async saveLLMVerdicts(verdicts) {
     if (!this.verdictRepository) throw new Error("Database not initialized");
     if (verdicts.length === 0) return;
-    await this.verdictRepository.save(verdicts);
+    const BATCH = 500;
+    for (let i = 0; i < verdicts.length; i += BATCH) {
+      await this.verdictRepository.save(verdicts.slice(i, i + BATCH));
+    }
   }
   /**
    * Removes all cached LLM verdicts where either side's file path matches.
