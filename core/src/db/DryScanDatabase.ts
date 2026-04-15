@@ -6,6 +6,7 @@ import { FileEntity } from "./entities/FileEntity";
 import { IndexUnit } from "../types";
 import { IndexUnitEntity } from "./entities/IndexUnitEntity";
 import { LLMVerdictEntity } from "./entities/LLMVerdictEntity";
+import { DB_BATCH_SIZE } from "../const";
 
 export class DryScanDatabase {
   private dataSource?: DataSource;
@@ -41,10 +42,9 @@ export class DryScanDatabase {
   async saveUnits(units: IndexUnit | IndexUnit[]): Promise<void> {
     if (!this.unitRepository) throw new Error("Database not initialized");
     const payload = Array.isArray(units) ? units : [units];
-    const BATCH_SIZE = 500;
-    for (let i = 0; i < payload.length; i += BATCH_SIZE) {
-      console.debug(`[DryScanDatabase] Saving units ${i + 1}-${Math.min(i + BATCH_SIZE, payload.length)} of ${payload.length}...`);
-      const batch = payload.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < payload.length; i += DB_BATCH_SIZE) {
+      console.debug(`[DryScanDatabase] Saving units ${i + 1}-${Math.min(i + DB_BATCH_SIZE, payload.length)} of ${payload.length}...`);
+      const batch = payload.slice(i, i + DB_BATCH_SIZE);
       await this.unitRepository.save(batch);
     }
   }
@@ -145,9 +145,8 @@ export class DryScanDatabase {
   async saveLLMVerdicts(verdicts: LLMVerdictEntity[]): Promise<void> {
     if (!this.verdictRepository) throw new Error("Database not initialized");
     if (verdicts.length === 0) return;
-    const BATCH = 500;
-    for (let i = 0; i < verdicts.length; i += BATCH) {
-      await this.verdictRepository.save(verdicts.slice(i, i + BATCH));
+    for (let i = 0; i < verdicts.length; i += DB_BATCH_SIZE) {
+      await this.verdictRepository.save(verdicts.slice(i, i + DB_BATCH_SIZE));
     }
   }
 

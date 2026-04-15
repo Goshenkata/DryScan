@@ -13,6 +13,7 @@ var INDEX_DB = "index.db";
 var REPORTS_DIR = "reports";
 var FILE_CHECKSUM_ALGO = "md5";
 var BLOCK_HASH_ALGO = "sha1";
+var DB_BATCH_SIZE = 500;
 
 // src/IndexUnitExtractor.ts
 import path2 from "path";
@@ -863,10 +864,9 @@ var DryScanDatabase = class {
   async saveUnits(units) {
     if (!this.unitRepository) throw new Error("Database not initialized");
     const payload = Array.isArray(units) ? units : [units];
-    const BATCH_SIZE = 500;
-    for (let i = 0; i < payload.length; i += BATCH_SIZE) {
-      console.debug(`[DryScanDatabase] Saving units ${i + 1}-${Math.min(i + BATCH_SIZE, payload.length)} of ${payload.length}...`);
-      const batch = payload.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < payload.length; i += DB_BATCH_SIZE) {
+      console.debug(`[DryScanDatabase] Saving units ${i + 1}-${Math.min(i + DB_BATCH_SIZE, payload.length)} of ${payload.length}...`);
+      const batch = payload.slice(i, i + DB_BATCH_SIZE);
       await this.unitRepository.save(batch);
     }
   }
@@ -953,9 +953,8 @@ var DryScanDatabase = class {
   async saveLLMVerdicts(verdicts) {
     if (!this.verdictRepository) throw new Error("Database not initialized");
     if (verdicts.length === 0) return;
-    const BATCH = 500;
-    for (let i = 0; i < verdicts.length; i += BATCH) {
-      await this.verdictRepository.save(verdicts.slice(i, i + BATCH));
+    for (let i = 0; i < verdicts.length; i += DB_BATCH_SIZE) {
+      await this.verdictRepository.save(verdicts.slice(i, i + DB_BATCH_SIZE));
     }
   }
   /**
@@ -2196,7 +2195,7 @@ var DryScan = class {
     const { analysis, timings } = await this.findDuplicates(config);
     const m = analysis.metrics;
     const metrics = m ? {
-      filesScanned: m.unitCounts.total > 0 ? (await this.extractor.listSourceFiles(this.repoPath)).length : 0,
+      filesScanned: (await this.db.getAllFiles()).length,
       totalLinesOfCode: analysis.score.totalLines,
       unitCounts: m.unitCounts,
       pairsBeforeLLM: m.pairsBeforeLLM,

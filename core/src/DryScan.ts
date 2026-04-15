@@ -111,9 +111,7 @@ export class DryScan {
     const m = analysis.metrics;
     const metrics: ScanMetrics | undefined = m
       ? {
-          filesScanned: m.unitCounts.total > 0
-            ? (await this.extractor.listSourceFiles(this.repoPath)).length
-            : 0,
+          filesScanned: (await this.db.getAllFiles()).length,
           totalLinesOfCode: analysis.score.totalLines,
           unitCounts: m.unitCounts,
           pairsBeforeLLM: m.pairsBeforeLLM,
