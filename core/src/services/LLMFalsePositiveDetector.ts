@@ -1,10 +1,9 @@
-import fs from "fs/promises";
-import path from "path";
 import debug from "debug";
 import { DuplicateGroup, LLMDecision } from "../types";
 import { DryScanDatabase } from "../db/DryScanDatabase";
 import { LLMVerdictEntity } from "../db/entities/LLMVerdictEntity";
 import { ModelConnector } from "./ModelConnector";
+import { configStore } from "../config/configStore";
 
 const log = debug("DryScan:LLMFalsePositiveDetector");
 
@@ -14,15 +13,16 @@ const log = debug("DryScan:LLMFalsePositiveDetector");
 const CONCURRENCY_LIMIT = 20;
 
 /**
- * Classifies embedding-confirmed duplicate candidates via a fine-tuned LLM
- * (qwen-duplication-2b, served by Ollama) to separate true duplicates from false positives.
+ * Classifies embedding-confirmed duplicate candidates via an LLM
+ * to separate true duplicates from false positives.
+ *
+ * The backend is selected via dryconfig.json `llmSource`:
+ * - "copilot" → GPT-4.1 via the copilot CLI
+ * - anything else → Ollama chat model specified by `llmModel`
  *
  * Verdicts are persisted in the `llm_verdicts` table and reused on subsequent
  * runs as long as neither file in the pair has changed (dirty-path invalidation
  * is handled by the caller before invoking `classify`).
- *
- * NOTE: Language detection is hardcoded to Java until additional LanguageExtractor
- * implementations are added to the pipeline.
  */
 export class LLMFalsePositiveDetector {
   private readonly connector: ModelConnector;
@@ -118,86 +118,29 @@ export class LLMFalsePositiveDetector {
     group: DuplicateGroup
   ): Promise<{ group: DuplicateGroup; verdict: "yes" | "no" }> {
     try {
-      const prompt = await this.buildPrompt(group);
-      const raw = await this.connector.chat(prompt);
-      const verdict: "yes" | "no" = raw.toLowerCase().startsWith("yes") ? "yes" : "no";
-      log("Pair %s → %s (raw: %s)", this.pairKey(group), verdict, raw);
+      const config = await configStore.get(this.repoPath);
+      const snippetA = this.formatSnippet(group.left);
+      const snippetB = this.formatSnippet(group.right);
+      let verdict: "yes" | "no";
+      if (config.llmSource === "copilot") {
+        verdict = await this.connector.classifyWithCopilot(snippetA, snippetB);
+      } else {
+        verdict = await this.connector.chatClassify(snippetA, snippetB);
+      }
+      log("Pair %s → %s", this.pairKey(group), verdict);
       return { group, verdict };
     } catch (err) {
-      log("LLM classification error for pair %s: %s — defaulting to true positive", this.pairKey(group), (err as Error).message);
+      log("Classifier error for pair %s: %s — defaulting to true positive", this.pairKey(group), (err as Error).message);
       return { group, verdict: "yes" };
     }
   }
 
-  /**
-   * Builds the inference prompt matching the training format documented in
-   * DryScanDiplomna/finetune/TRAINING_FORMAT.md.
-   *
-   * TODO: detect language from file extension once more LanguageExtractors are added.
-   *       Currently hardcoded to "java".
-   */
-  private async buildPrompt(group: DuplicateGroup): Promise<string> {
-    const projectName = path.basename(this.repoPath);
-    // Language is hardcoded to java — the only extractor currently implemented.
-    const lang = "java";
-
-    const [fileAContent, fileBContent] = await Promise.all([
-      fs.readFile(path.join(this.repoPath, group.left.filePath), "utf8").catch(() => ""),
-      fs.readFile(path.join(this.repoPath, group.right.filePath), "utf8").catch(() => ""),
-    ]);
-
-    const lines = [
-      "You are a strict code-duplication judge.",
-      "",
-      "Task:",
-      "Decide if Snippet A and Snippet B count as duplicated code.",
-      "Answer based on BOTH the snippets and their full-file context.",
-      "",
-      "Definition (return 'yes' if ANY apply):",
-      "- Straight/near clone (small edits, renames, reformatting).",
-      "- Semantic duplicate: different syntax but same behavior/intent.",
-      "- Extractable duplicate: not identical, but a reasonable shared helper/abstraction could be extracted.",
-      "Return 'no' ONLY if they clearly implement different responsibilities/logic and are not reasonably extractable.",
-      "",
-      "Output rules (mandatory):",
-      "- Output EXACTLY one token: yes OR no",
-      "- No punctuation, no extra words, no explanations",
-      "- Think silently before answering",
-      "",
-      "Evidence:",
-      "",
-      `=== Snippet A (project=${projectName} id=${group.left.id}) ===`,
-      `name: ${group.left.name}`,
-      `unitType: ${group.left.unitType}`,
-      `filePath: ${group.left.filePath}`,
-      `lines: ${group.left.startLine}-${group.left.endLine}`,
-      "```" + lang,
-      group.left.code,
-      "```",
-      "",
-      `=== Snippet B (project=${projectName} id=${group.right.id}) ===`,
-      `name: ${group.right.name}`,
-      `unitType: ${group.right.unitType}`,
-      `filePath: ${group.right.filePath}`,
-      `lines: ${group.right.startLine}-${group.right.endLine}`,
-      "```" + lang,
-      group.right.code,
-      "```",
-      "",
-      `=== Full file A: ${group.left.filePath} ===`,
-      "```" + lang,
-      fileAContent,
-      "```",
-      "",
-      `=== Full file B: ${group.right.filePath} ===`,
-      "```" + lang,
-      fileBContent,
-      "```",
-      "",
-      "Question: Are Snippet A and Snippet B duplicated code under the definition above?",
-      "Answer:",
-    ];
-
-    return lines.join("\n");
+  private formatSnippet(side: DuplicateGroup["left"]): string {
+    return [
+      `name: ${side.name}`,
+      `type: ${side.unitType}`,
+      `file: ${side.filePath} lines ${side.startLine}-${side.endLine}`,
+      side.code,
+    ].join("\n");
   }
 }

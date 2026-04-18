@@ -8,5 +8,7 @@
   "threshold": 0.8,
   "embeddingSource": "http://localhost:11434",
   "contextLength": 50,
-  "enableLLMFilter": false
+  "enableLLMFilter": false,
+  "llmSource": "ollama",
+  "llmModel": "gemma4:e4b"
 }

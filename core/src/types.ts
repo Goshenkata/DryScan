@@ -66,6 +66,10 @@ export interface DryConfig {
   contextLength: number;
   /** When true, confirmed duplicate candidates are sent to the fine-tuned LLM for false-positive filtering. Default: true. */
   enableLLMFilter: boolean;
+  /** LLM filter backend: "copilot" | "ollama" | Ollama URL. Default: "ollama". */
+  llmSource: string;
+  /** Ollama model name used for LLM filtering (ignored when llmSource is "copilot"). */
+  llmModel: string;
 }
 
 export interface LLMDecision {
