@@ -15,6 +15,8 @@ export const DEFAULT_CONFIG: DryConfig = {
   embeddingSource: "http://localhost:11434",
   contextLength: 2048,
   enableLLMFilter: true,
+  llmSource: "ollama",
+  llmModel: "gemma4:e4b",
 };
 
 const validator = new Validator();
@@ -30,6 +32,8 @@ const partialConfigSchema: Schema = {
     embeddingSource: { type: "string" },
     contextLength: { type: "number" },
     enableLLMFilter: { type: "boolean" },
+    llmSource: { type: "string" },
+    llmModel: { type: "string" },
   },
 };
 
@@ -44,6 +48,8 @@ const fullConfigSchema: Schema = {
     "embeddingSource",
     "contextLength",
     "enableLLMFilter",
+    "llmSource",
+    "llmModel",
   ],
 };
 

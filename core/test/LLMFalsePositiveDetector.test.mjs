@@ -69,6 +69,8 @@ describe("LLMFalsePositiveDetector", function () {
     sinon.stub(configStore, "get").resolves({
       embeddingSource: "http://localhost:11434",
       enableLLMFilter: true,
+      llmSource: "ollama",
+      llmModel: "gemma4:e4b",
     });
 
     // Stub fs.readFile so prompt building doesn't hit disk

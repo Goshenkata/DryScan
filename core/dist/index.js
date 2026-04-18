@@ -1,11 +1,11 @@
 import {
   __decorateClass,
   similarityApi
-} from "./chunk-23WZ5D5H.js";
+} from "./chunk-SK4GNQXH.js";
 
 // src/DryScan.ts
 import upath6 from "upath";
-import fs8 from "fs/promises";
+import fs7 from "fs/promises";
 
 // src/const.ts
 var DRYSCAN_DIR = ".dry";
@@ -60,7 +60,9 @@ var DEFAULT_CONFIG = {
   threshold: 0.8,
   embeddingSource: "http://localhost:11434",
   contextLength: 2048,
-  enableLLMFilter: true
+  enableLLMFilter: true,
+  llmSource: "ollama",
+  llmModel: "gemma4:e4b"
 };
 var validator = new Validator();
 var partialConfigSchema = {
@@ -73,7 +75,9 @@ var partialConfigSchema = {
     threshold: { type: "number" },
     embeddingSource: { type: "string" },
     contextLength: { type: "number" },
-    enableLLMFilter: { type: "boolean" }
+    enableLLMFilter: { type: "boolean" },
+    llmSource: { type: "string" },
+    llmModel: { type: "string" }
   }
 };
 var fullConfigSchema = {
@@ -86,7 +90,9 @@ var fullConfigSchema = {
     "threshold",
     "embeddingSource",
     "contextLength",
-    "enableLLMFilter"
+    "enableLLMFilter",
+    "llmSource",
+    "llmModel"
   ]
 };
 function validateConfig(raw, schema, source) {
@@ -980,13 +986,15 @@ import path3 from "path";
 import fs5 from "fs/promises";
 
 // src/services/ModelConnector.ts
+import { exec } from "child_process";
+import { promisify } from "util";
 import debug3 from "debug";
 import { OllamaEmbeddings } from "@langchain/ollama";
 import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
+var execAsync = promisify(exec);
 var log3 = debug3("DryScan:ModelConnector");
-var OLLAMA_EMBEDDING_MODEL = "qwen3-embedding:0.6b";
-var HUGGINGFACE_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
-var OLLAMA_CHAT_MODEL = "qwen3.5-2b-q4km:latest";
+var OLLAMA_EMBEDDING_MODEL = process.env.DRYSCAN_EMBED_MODEL ?? "qwen3-embedding:4b";
+var HUGGINGFACE_EMBEDDING_MODEL = process.env.DRYSCAN_HF_EMBED_MODEL ?? "Qwen/Qwen3-Embedding-0.6B";
 var ModelConnector = class {
   constructor(repoPath) {
     this.repoPath = repoPath;
@@ -1020,31 +1028,104 @@ var ModelConnector = class {
    */
   async chat(prompt) {
     const config = await configStore.get(this.repoPath);
-    const baseUrl = this.resolveOllamaChatBaseUrl(config.embeddingSource);
-    log3("Sending chat request to %s using model %s", baseUrl, OLLAMA_CHAT_MODEL);
+    const baseUrl = this.resolveOllamaChatBaseUrl(config.llmSource, config.embeddingSource);
+    const model = config.llmModel;
+    log3("Sending chat request to %s using model %s", baseUrl, model);
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: OLLAMA_CHAT_MODEL,
+        model,
         messages: [{ role: "user", content: prompt }],
         stream: false,
-        options: { temperature: 0, num_predict: 32 }
+        think: false,
+        options: { temperature: 0, num_predict: 4096 }
       })
     });
     if (!response.ok) {
       throw new Error(`Ollama chat request failed: HTTP ${response.status}`);
     }
     const data = await response.json();
-    return data.message?.content?.trim() ?? "";
+    const raw = data.message?.content?.trim() ?? "";
+    const afterThink = raw.includes("</think>") ? raw.split("</think>").pop().trim() : raw;
+    return afterThink;
+  }
+  // ── Ollama chat classify ──────────────────────────────────────────────────
+  /**
+   * Classifies a (snippetA, snippetB) pair for code duplication using the configured
+   * Ollama chat model (config.llmModel).
+   *
+   * Returns "yes" (duplicate) or "no" (false positive).
+   * Defaults to "yes" on error to preserve recall.
+   */
+  async chatClassify(snippetA, snippetB) {
+    log3("Classifying pair via Ollama chat model");
+    const raw = await this.chat(this.buildClassifyPrompt(snippetA, snippetB));
+    const verdict = raw.toLowerCase().startsWith("yes") ? "yes" : "no";
+    log3("Chat classify verdict: %s (raw: %s)", verdict, raw);
+    return verdict;
+  }
+  // ── GitHub Copilot / GPT-4.1 ─────────────────────────────────────────────
+  /**
+   * Classifies a code pair using GPT-4.1 via the `copilot` CLI.
+   * Returns "yes" (duplicate) or "no" (false positive).
+   * Defaults to "yes" on error to preserve recall.
+   */
+  async classifyWithCopilot(snippetA, snippetB) {
+    const prompt = this.buildClassifyPrompt(snippetA, snippetB);
+    const escaped = prompt.replace(/'/g, `'\\''`);
+    const cmd = `copilot --model gpt-4.1 --allow-all-tools --output-format json -p '${escaped}'`;
+    log3("Classifying pair with GPT-4.1 via copilot CLI");
+    const { stdout } = await execAsync(cmd, { timeout: 6e4 });
+    const lines = stdout.split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === "assistant.message" && obj.data?.content) {
+          const content = obj.data.content.trim().toLowerCase();
+          const verdict = content.startsWith("yes") ? "yes" : "no";
+          log3("GPT-4.1 verdict: %s (raw: %s)", verdict, content);
+          return verdict;
+        }
+      } catch {
+      }
+    }
+    throw new Error("No assistant.message found in copilot output");
   }
   // ── Private helpers ────────────────────────────────────────────────────────
+  buildClassifyPrompt(snippetA, snippetB) {
+    return [
+      'Output ONLY the word "yes" or "no" \u2014 no punctuation, no explanation.',
+      "",
+      "Are these two code snippets duplicates of each other \u2014 i.e. would a developer want to extract them into a shared method or abstraction?",
+      "",
+      "Answer YES if:",
+      "- They have the same or nearly identical code structure (same body pattern, even if variable/field/type names differ)",
+      "- One is a copy of the other with minor modifications (different constant, different DTO type, inverse operation)",
+      "- They implement the same logic using different APIs",
+      "",
+      "Answer NO if:",
+      "- One snippet directly calls or delegates to the other (caller-callee relationship)",
+      "- They share only incidental framework boilerplate but have entirely different logic and purpose",
+      "- They use the same structural container (e.g. if-else, try-catch) but perform fundamentally different operations",
+      "",
+      "Snippet A:",
+      snippetA,
+      "",
+      "Snippet B:",
+      snippetB,
+      "",
+      "Answer (yes/no):"
+    ].join("\n");
+  }
   buildEmbeddingProvider(source) {
     if (source.toLowerCase() === "huggingface") {
+      const apiKey = process.env.HUGGINGFACEHUB_API_TOKEN ?? process.env.HUGGINGFACEHUB_API_KEY;
       log3("Using HuggingFace Inference with model: %s", HUGGINGFACE_EMBEDDING_MODEL);
       return new HuggingFaceInferenceEmbeddings({
         model: HUGGINGFACE_EMBEDDING_MODEL,
-        provider: "hf-inference"
+        provider: "hf-inference",
+        ...apiKey && { apiKey }
       });
     }
     const ollamaBaseUrl = this.resolveOllamaEmbeddingBaseUrl(source);
@@ -1068,11 +1149,13 @@ var ModelConnector = class {
     return null;
   }
   /**
-   * For chat completions: extracts host from an HTTP URL, or falls back to localhost.
+   * For chat completions: resolves base URL from llmSource (preferred) or falls back to
+   * extracting the host from embeddingSource. Defaults to localhost:11434.
    */
-  resolveOllamaChatBaseUrl(source) {
-    if (/^https?:\/\//i.test(source)) {
-      const url = new URL(source);
+  resolveOllamaChatBaseUrl(llmSource, embeddingSource) {
+    const src = /^https?:\/\//i.test(llmSource) ? llmSource : embeddingSource;
+    if (/^https?:\/\//i.test(src)) {
+      const url = new URL(src);
       return `${url.protocol}//${url.host}`;
     }
     return "http://localhost:11434";
@@ -1679,8 +1762,6 @@ var DuplicationCache = class _DuplicationCache {
 };
 
 // src/services/LLMFalsePositiveDetector.ts
-import fs7 from "fs/promises";
-import path5 from "path";
 import debug8 from "debug";
 var log8 = debug8("DryScan:LLMFalsePositiveDetector");
 var CONCURRENCY_LIMIT = 20;
@@ -1759,82 +1840,29 @@ var LLMFalsePositiveDetector = class {
   }
   async classifyPair(group) {
     try {
-      const prompt = await this.buildPrompt(group);
-      const raw = await this.connector.chat(prompt);
-      const verdict = raw.toLowerCase().startsWith("yes") ? "yes" : "no";
-      log8("Pair %s \u2192 %s (raw: %s)", this.pairKey(group), verdict, raw);
+      const config = await configStore.get(this.repoPath);
+      const snippetA = this.formatSnippet(group.left);
+      const snippetB = this.formatSnippet(group.right);
+      let verdict;
+      if (config.llmSource === "copilot") {
+        verdict = await this.connector.classifyWithCopilot(snippetA, snippetB);
+      } else {
+        verdict = await this.connector.chatClassify(snippetA, snippetB);
+      }
+      log8("Pair %s \u2192 %s", this.pairKey(group), verdict);
       return { group, verdict };
     } catch (err) {
-      log8("LLM classification error for pair %s: %s \u2014 defaulting to true positive", this.pairKey(group), err.message);
+      log8("Classifier error for pair %s: %s \u2014 defaulting to true positive", this.pairKey(group), err.message);
       return { group, verdict: "yes" };
     }
   }
-  /**
-   * Builds the inference prompt matching the training format documented in
-   * DryScanDiplomna/finetune/TRAINING_FORMAT.md.
-   *
-   * TODO: detect language from file extension once more LanguageExtractors are added.
-   *       Currently hardcoded to "java".
-   */
-  async buildPrompt(group) {
-    const projectName = path5.basename(this.repoPath);
-    const lang = "java";
-    const [fileAContent, fileBContent] = await Promise.all([
-      fs7.readFile(path5.join(this.repoPath, group.left.filePath), "utf8").catch(() => ""),
-      fs7.readFile(path5.join(this.repoPath, group.right.filePath), "utf8").catch(() => "")
-    ]);
-    const lines = [
-      "You are a strict code-duplication judge.",
-      "",
-      "Task:",
-      "Decide if Snippet A and Snippet B count as duplicated code.",
-      "Answer based on BOTH the snippets and their full-file context.",
-      "",
-      "Definition (return 'yes' if ANY apply):",
-      "- Straight/near clone (small edits, renames, reformatting).",
-      "- Semantic duplicate: different syntax but same behavior/intent.",
-      "- Extractable duplicate: not identical, but a reasonable shared helper/abstraction could be extracted.",
-      "Return 'no' ONLY if they clearly implement different responsibilities/logic and are not reasonably extractable.",
-      "",
-      "Output rules (mandatory):",
-      "- Output EXACTLY one token: yes OR no",
-      "- No punctuation, no extra words, no explanations",
-      "- Think silently before answering",
-      "",
-      "Evidence:",
-      "",
-      `=== Snippet A (project=${projectName} id=${group.left.id}) ===`,
-      `name: ${group.left.name}`,
-      `unitType: ${group.left.unitType}`,
-      `filePath: ${group.left.filePath}`,
-      `lines: ${group.left.startLine}-${group.left.endLine}`,
-      "```" + lang,
-      group.left.code,
-      "```",
-      "",
-      `=== Snippet B (project=${projectName} id=${group.right.id}) ===`,
-      `name: ${group.right.name}`,
-      `unitType: ${group.right.unitType}`,
-      `filePath: ${group.right.filePath}`,
-      `lines: ${group.right.startLine}-${group.right.endLine}`,
-      "```" + lang,
-      group.right.code,
-      "```",
-      "",
-      `=== Full file A: ${group.left.filePath} ===`,
-      "```" + lang,
-      fileAContent,
-      "```",
-      "",
-      `=== Full file B: ${group.right.filePath} ===`,
-      "```" + lang,
-      fileBContent,
-      "```",
-      "",
-      "Question: Are Snippet A and Snippet B duplicated code under the definition above?",
-      "Answer:"
-    ];
-    return lines.join("\n");
+  formatSnippet(side) {
+    return [
+      `name: ${side.name}`,
+      `type: ${side.unitType}`,
+      `file: ${side.filePath} lines ${side.startLine}-${side.endLine}`,
+      side.code
+    ].join("\n");
   }
 };
 
@@ -2256,7 +2284,7 @@ var DryScan = class {
   async ensureDatabase() {
     if (this.db.isInitialized()) return;
     const dbPath = upath6.join(this.repoPath, DRYSCAN_DIR, INDEX_DB);
-    await fs8.mkdir(upath6.dirname(dbPath), { recursive: true });
+    await fs7.mkdir(upath6.dirname(dbPath), { recursive: true });
     await this.db.init(dbPath);
   }
   async loadConfig() {
@@ -2264,16 +2292,16 @@ var DryScan = class {
   }
   async saveReport(report) {
     const reportDir = upath6.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
-    await fs8.mkdir(reportDir, { recursive: true });
+    await fs7.mkdir(reportDir, { recursive: true });
     const safeTimestamp = report.generatedAt.replace(/[:.]/g, "-");
     const reportPath = upath6.join(reportDir, `dupes-${safeTimestamp}.json`);
-    await fs8.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
+    await fs7.writeFile(reportPath, JSON.stringify(report, null, 2), "utf8");
   }
   async loadLatestReport() {
     const reportDir = upath6.join(this.repoPath, DRYSCAN_DIR, REPORTS_DIR);
     let entries;
     try {
-      entries = await fs8.readdir(reportDir);
+      entries = await fs7.readdir(reportDir);
     } catch (err) {
       if (err?.code === "ENOENT") return null;
       throw err;
@@ -2283,13 +2311,13 @@ var DryScan = class {
     const withStats = await Promise.all(
       jsonReports.map(async (name) => {
         const fullPath = upath6.join(reportDir, name);
-        const stat = await fs8.stat(fullPath);
+        const stat = await fs7.stat(fullPath);
         return { fullPath, mtimeMs: stat.mtimeMs };
       })
     );
     withStats.sort((a, b) => b.mtimeMs - a.mtimeMs);
     const latest = withStats[0];
-    const raw = await fs8.readFile(latest.fullPath, "utf8");
+    const raw = await fs7.readFile(latest.fullPath, "utf8");
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.duplicates) || typeof parsed.threshold !== "number") {
       return null;
